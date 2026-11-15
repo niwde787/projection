@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Projection Mapper</title>
 <style>
   :root { --ui:#0f1115; --ui2:#181b22; --line:#2a2f3a; --txt:#e6e8ee; --dim:#8a91a0; --acc:#3de0c0; --warn:#ff5d73; --amb:#ffc94d; }
@@ -17,8 +17,38 @@
   body.output { cursor:none; }
   #badge { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:6; background:rgba(15,17,21,.85); border:1px solid var(--line); border-radius:20px; padding:4px 12px; font-size:11px; letter-spacing:.08em; color:var(--dim); pointer-events:none; }
   body.preview #badge { color:var(--amb); border-color:var(--amb); }
+  #zoomBar { position:fixed; top:calc(8px + env(safe-area-inset-top)); right:calc(8px + env(safe-area-inset-right)); z-index:9; display:flex; gap:4px; align-items:center; background:rgba(15,17,21,.9); border:1px solid var(--line); border-radius:20px; padding:3px; }
+  #zoomBar button { border-radius:16px; padding:4px 10px; min-width:32px; }
+  #zoomBar #zPct { min-width:52px; font:12px ui-monospace,monospace; color:var(--dim); text-align:center; cursor:pointer; border:0; background:none; }
+  body.output #zoomBar { display:none; }
+  body.panning, body.panning * { cursor:grabbing !important; }
 
-  #panel { position:fixed; top:10px; left:10px; width:300px; max-height:calc(100% - 20px); overflow:auto; background:rgba(15,17,21,.95); border:1px solid var(--line); border-radius:10px; padding:10px 12px 12px; z-index:10; touch-action:pan-y; }
+  /* ---- bottom tab bar + sheet ---- */
+  #topbar { position:fixed; top:calc(8px + env(safe-area-inset-top)); left:calc(8px + env(safe-area-inset-left)); z-index:9; }
+  #modeSeg { background:rgba(15,17,21,.9); border-radius:20px; width:auto; }
+  #modeSeg button { padding:6px 13px; font-size:12.5px; }
+  #tabbar { position:fixed; left:0; right:0; bottom:0; z-index:11; display:flex; justify-content:center; gap:2px;
+    padding:4px max(6px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(6px, env(safe-area-inset-left));
+    background:rgba(11,13,17,.97); border-top:1px solid var(--line); backdrop-filter:blur(8px); }
+  #tabbar button { flex:1; max-width:92px; border:0; border-radius:10px; background:none; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:7px 0 6px; font-size:10.5px; letter-spacing:.02em; color:var(--dim); }
+  #tabbar button svg { width:22px; height:22px; }
+  #tabbar button.on { color:var(--acc); background:rgba(61,224,192,.08); }
+  #panel { position:fixed; left:calc(8px + env(safe-area-inset-left)); bottom:calc(70px + env(safe-area-inset-bottom)); width:380px;
+    max-height:min(62vh, calc(100% - 150px)); overflow:auto; background:rgba(15,17,21,.97); border:1px solid var(--line); border-radius:14px;
+    padding:0 14px 12px; z-index:10; touch-action:pan-y; box-shadow:0 12px 40px rgba(0,0,0,.5); overscroll-behavior:contain; }
+  #panel.closed { display:none; }
+  .sheetHead { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 0 8px; background:rgba(15,17,21,.98); }
+  .sheetHead b { font-size:14px; letter-spacing:.03em; }
+  .sheetHead button { border-radius:16px; padding:3px 10px; }
+  .pane { display:none; }
+  .pane.on { display:block; }
+  .pane > details { border-top:1px solid var(--line); padding:10px 0 4px; }
+  .pane > details:first-child { border-top:0; padding-top:2px; }
+  .pane summary { pointer-events:none; }
+  .pane summary::after { content:'' !important; }
+  .empty { padding:18px 6px; text-align:center; color:var(--dim); font-size:12.5px; }
+  body.output #topbar, body.output #tabbar, body.output #panel { display:none !important; }
   #panel h1 { font-size:14px; margin:0; letter-spacing:.04em; }
   .sub { color:var(--dim); font-size:11px; }
   details { border-top:1px solid var(--line); padding:8px 0 2px; }
@@ -53,14 +83,17 @@
   kbd { background:var(--ui2); border:1px solid var(--line); border-radius:4px; padding:0 4px; font:11px ui-monospace,monospace; }
   .meter { flex:1; height:8px; background:var(--ui2); border-radius:4px; overflow:hidden; border:1px solid var(--line); }
   .meter i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),var(--amb),var(--warn)); }
-  #hint { position:fixed; right:10px; bottom:10px; background:rgba(15,17,21,.85); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:11px; color:var(--dim); max-width:320px; z-index:9; }
-  #toast { position:fixed; left:50%; top:44px; transform:translateX(-50%); background:var(--acc); color:#04221c; padding:6px 12px; border-radius:6px; font-weight:600; opacity:0; transition:opacity .25s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
-  #panel.collapsed > :not(.head) { display:none; }
-  .head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px; }
+  #hint { font-size:11.5px; color:var(--dim); line-height:1.9; }
+  #toast { position:fixed; left:50%; top:calc(52px + env(safe-area-inset-top)); transform:translateX(-50%); background:var(--acc); color:#04221c; padding:6px 12px; border-radius:6px; font-weight:600; opacity:0; transition:opacity .25s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
+
   #nogl { position:fixed; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:30px; color:var(--dim); }
+  #badge { display:none; }
   @media (max-width:720px) {
-    #panel { left:6px; right:6px; top:auto; bottom:6px; width:auto; max-height:48vh; }
-    #hint { display:none; }
+    #panel { left:6px; right:6px; width:auto; max-height:46vh; bottom:calc(66px + env(safe-area-inset-bottom)); }
+    #tabbar button { font-size:10px; }
+    #modeSeg button { padding:6px 10px; }
+    #zoomBar button { padding:4px 8px; min-width:28px; }
+    #zFit { display:none; }
   }
 </style>
 </head>
@@ -68,26 +101,40 @@
 <div id="stage"><canvas id="gl"></canvas></div>
 <svg id="overlay"></svg>
 <div id="badge">EDIT</div>
+<div id="zoomBar">
+  <button id="zOut" title="Zoom out (−)">−</button>
+  <button id="zPct" title="Reset to fit (0)">100%</button>
+  <button id="zIn" title="Zoom in (+)">+</button>
+  <button id="zFit" title="Fit to screen (0)">Fit</button>
+</div>
 <div id="nogl">This browser doesn't support WebGL2, which the mapper needs. Try a current Chrome, Edge, Firefox or Safari.</div>
 
-<div id="panel">
-  <div class="head">
-    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.6 · rotate · shapes · grid &amp; snap · mesh · masks</div></div>
-    <button id="collapse" title="Collapse panel">–</button>
+<div id="topbar">
+  <div class="seg" id="modeSeg">
+    <button id="mEdit" class="on" title="Edit">Edit</button>
+    <button id="mPrev" title="Preview (P)">Preview</button>
+    <button id="mOut" title="Output (H)">Output</button>
   </div>
+</div>
 
-  <div class="seg" style="margin-bottom:8px">
-    <button id="mEdit" class="on">Edit</button>
-    <button id="mPrev">Preview (P)</button>
-    <button id="mOut">Output (H)</button>
-  </div>
-  <div class="row">
-    <button id="fs">Fullscreen (F)</button>
-    <button id="owin">Output window (O)</button>
-    <button id="blackout">Blackout (B)</button>
-  </div>
+<nav id="tabbar"></nav>
 
-  <details open>
+<div id="panel" class="closed">
+  <div class="sheetHead"><b id="sheetTitle">Layers</b><button id="collapse" title="Close">✕</button></div>
+  <div id="panes"></div>
+
+  <details open id="dispSec">
+    <summary>Display</summary>
+    <div class="row"><button id="fs">Fullscreen (F)</button><button id="owin">Output window (O)</button></div>
+    <div class="tiny">Projector setup: drag this window onto the projector and go fullscreen, or open a separate output window so the controls stay on your screen. The <b>Output</b> button at the top (or <kbd>H</kbd>) hides all controls.</div>
+  </details>
+
+  <details open id="showTop">
+    <summary>Live</summary>
+    <div class="row"><button id="blackout">Blackout (B)</button></div>
+  </details>
+
+  <details open id="surfSec">
     <summary>Surfaces</summary>
     <div class="list" id="sList"></div>
     <div class="row">
@@ -268,15 +315,16 @@
   </details>
 </div>
 
-<div id="hint">
+<details open id="keysSec"><summary>Shortcuts</summary><div id="hint">
   <b style="color:var(--txt)">Controls</b><br>
   Drag handles · drag center ◆ to move · click a surface to select<br>
   <kbd>1</kbd>–<kbd>4</kbd> corner · <kbd>←↑→↓</kbd> nudge (<kbd>Shift</kbd> ×10) · <kbd>M</kbd> mesh<br>
   <kbd>Tab</kbd> next · <kbd>N</kbd> new · <kbd>Del</kbd> delete · <kbd>Space</kbd> GO cue<br>
   <kbd>G</kbd> grid · hold <kbd>Alt</kbd> while dragging = no snap<br>
   <kbd>[</kbd> <kbd>]</kbd> rotate 1° (<kbd>Shift</kbd> 15°) · drag ↻ handle to rotate<br>
+  Pinch / wheel / <kbd>+</kbd> <kbd>−</kbd> zoom · drag empty space to pan · <kbd>0</kbd> fit<br>
   <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
-</div>
+</div></details>
 <div id="toast"></div>
 <audio id="audio" loop></audio>
 
@@ -617,12 +665,50 @@ function setOutput(w, h) {
   if (outCanvas) { outCanvas.width = w; outCanvas.height = h; }
   fitCanvas();
 }
+// ---- editor view: zoom & pan (never affects the projector output) ----
+const view = { z: 1, x: 0, y: 0 };
+const ZMIN = 1, ZMAX = 12;
+// editor area sits between the top bar and the tab bar
+function insets() {
+  if (viewMode === 'output') return [0, 0];
+  const tb = document.getElementById('topbar'), nb = document.getElementById('tabbar');
+  const t = tb ? tb.getBoundingClientRect().bottom + 6 : 0, b = nb ? innerHeight - nb.getBoundingClientRect().top + 6 : 0;
+  return [t, b];
+}
+// base (unpanned) geometry for zoom z
+function baseGeom(z) {
+  const [t, b] = insets(), W = innerWidth, Ha = Math.max(100, innerHeight - t - b), k = Math.min(W / out.w, Ha / out.h);
+  const cw = out.w * k * z, ch = out.h * k * z;
+  return { W, H: Ha, cw, ch, x0: (W - cw) / 2, y0: t + (Ha - ch) / 2 };
+}
+function viewGeom() {
+  const o = viewMode === 'output', g = baseGeom(o ? 1 : view.z);
+  return { W: g.W, H: g.H, cw: g.cw, ch: g.ch, left: g.x0 + (o ? 0 : view.x), top: g.y0 + (o ? 0 : view.y) };
+}
+function clampView() {
+  const { W, H, cw, ch } = baseGeom(view.z);
+  const mx = Math.max(0, (cw - W) / 2 + W * .35), my = Math.max(0, (ch - H) / 2 + H * .35);
+  if (view.z <= 1.0001) { view.x = 0; view.y = 0; }
+  view.x = clamp(view.x, -mx, mx); view.y = clamp(view.y, -my, my);
+}
 function fitCanvas() {
-  const W = innerWidth, H = innerHeight, k = Math.min(W / out.w, H / out.h);
-  const cw = out.w * k, ch = out.h * k;
-  Object.assign(cvs.style, { width: cw + 'px', height: ch + 'px', left: (W - cw) / 2 + 'px', top: (H - ch) / 2 + 'px' });
+  clampView();
+  const g = viewGeom();
+  Object.assign(cvs.style, { width: g.cw + 'px', height: g.ch + 'px', left: g.left + 'px', top: g.top + 'px' });
+  cvs.style.imageRendering = view.z > 3 && viewMode !== 'output' ? 'pixelated' : '';
+  const zp = document.getElementById('zPct'); if (zp) zp.textContent = Math.round(view.z * 100) + '%';
   drawOverlay();
 }
+// zoom so that screen point (sx, sy) stays fixed
+function zoomAt(sx, sy, nz) {
+  nz = clamp(nz, ZMIN, ZMAX);
+  const g = viewGeom(), u = (sx - g.left) / g.cw, v = (sy - g.top) / g.ch;
+  view.z = nz;
+  const b = baseGeom(nz);
+  view.x = sx - u * b.cw - b.x0; view.y = sy - v * b.ch - b.y0;
+  fitCanvas();
+}
+function resetView() { view.z = 1; view.x = 0; view.y = 0; fitCanvas(); }
 
 // =====================================================================
 // Content sources
@@ -1027,7 +1113,7 @@ function drawOverlay() {
   if (drag && drag.angLabel != null) { const p = drag.labelAt; o += `<g style="pointer-events:none"><rect x="${p[0] + 16}" y="${p[1] - 22}" width="54" height="20" rx="10" fill="rgba(0,0,0,.8)" stroke="#fff" stroke-opacity=".5"/><text x="${p[0] + 43}" y="${p[1] - 8}" text-anchor="middle" fill="#fff" font-size="12" font-family="ui-monospace,monospace">${drag.angLabel.toFixed(0)}°</text></g>`; }
   if (snapMark && drag) { const p = P(snapMark.p); o += `<circle cx="${p[0]}" cy="${p[1]}" r="${snapMark.k === 'v' ? 9 : 6}" fill="none" stroke="#ffffff" stroke-width="2"/><circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#ffffff"/>`; }
   svg.innerHTML = o;
-  if (typeof updateDimInfo === 'function' && $('dimSec').open) updateDimInfo();
+  if (typeof updateDimInfo === 'function' && typeof curTab !== 'undefined' && curTab === 'shape') updateDimInfo();
 }
 
 // =====================================================================
@@ -1080,7 +1166,73 @@ function snapMove(pts, T) {
   return best;
 }
 function norm(e) { const r = rect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+// ---- touch / mouse gestures for the editor view ----
+const touches = new Map();   // pointerId -> [x, y]
+let pinch = null, pan = null;
+const onCanvasArea = e => !e.target.closest || !e.target.closest('#panel, #zoomBar, #topbar, #tabbar');
+function cancelDragRestore() {
+  if (!drag) return;
+  const s = S(), m = M();
+  if (s && drag.origC) s.c = drag.origC.map(p => [...p]);
+  if (s && drag.origOff) s.mesh.off = drag.origOff.map(p => [...p]);
+  if (m && drag.origPts) { m.pts = drag.origPts.map(p => [...p]); masksDirty = true; }
+  drag = null; snapMark = null; syncAngle();
+}
+function startPinch() {
+  const [a, b] = [...touches.values()];
+  pinch = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z0: view.z, x0: view.x, y0: view.y };
+  pan = null;
+}
+addEventListener('pointerdown', e => {
+  if (viewMode === 'output' || !onCanvasArea(e)) return;
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) { cancelDragRestore(); startPinch(); e.stopPropagation(); e.preventDefault(); drawOverlay(); }
+    else if (touches.size > 2) { e.stopPropagation(); }
+  }
+  if (e.button === 1) { e.preventDefault(); pan = { sx: e.clientX, sy: e.clientY, x0: view.x, y0: view.y }; document.body.classList.add('panning'); }
+}, true);
+addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pinch && touches.size >= 2) {
+    const [a, b] = [...touches.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    // restore the view at pinch start, zoom about the start midpoint, then pan by the midpoint's travel
+    view.z = pinch.z0; view.x = pinch.x0; view.y = pinch.y0;
+    const nz = clamp(pinch.z0 * d / pinch.d0, ZMIN, ZMAX);
+    const g = viewGeom(), u = (pinch.m0[0] - g.left) / g.cw, v = (pinch.m0[1] - g.top) / g.ch;
+    const bg = baseGeom(nz);
+    view.z = nz; view.x = mid[0] - u * bg.cw - bg.x0; view.y = mid[1] - v * bg.ch - bg.y0;
+    fitCanvas(); e.stopPropagation(); return;
+  }
+  if (pan) { view.x = pan.x0 + e.clientX - pan.sx; view.y = pan.y0 + e.clientY - pan.sy; fitCanvas(); e.stopPropagation(); }
+}, true);
+const endPointer = e => {
+  if (e.pointerType === 'touch') touches.delete(e.pointerId);
+  if (pinch && touches.size < 2) { pinch = null; if (touches.size === 1) { const [p] = [...touches.values()]; pan = { sx: p[0], sy: p[1], x0: view.x, y0: view.y, touch: true }; } }
+  if (pan && (!pan.touch || touches.size === 0)) { pan = null; document.body.classList.remove('panning'); }
+};
+addEventListener('pointerup', endPointer, true);
+addEventListener('pointercancel', endPointer, true);
+// wheel: pinch-trackpad / Ctrl+wheel / mouse wheel = zoom; two-finger trackpad scroll = pan
+$('stage').addEventListener('wheel', e => {
+  if (viewMode === 'output') return;
+  e.preventDefault();
+  const lineMode = e.deltaMode === 1 || (Math.abs(e.deltaY) >= 50 && e.deltaX === 0 && Number.isInteger(e.deltaY));
+  if (e.ctrlKey || e.metaKey || lineMode) zoomAt(e.clientX, e.clientY, view.z * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0018) * (e.deltaMode === 1 ? 33 : 1)));
+  else { view.x -= e.deltaX; view.y -= e.deltaY; fitCanvas(); }
+}, { passive: false });
+svg.addEventListener('wheel', e => $('stage').dispatchEvent(new WheelEvent('wheel', e)), { passive: false });
+// Safari trackpad pinch
+let gz0 = 1;
+addEventListener('gesturestart', e => { if (viewMode === 'output') return; e.preventDefault(); gz0 = view.z; });
+addEventListener('gesturechange', e => { if (viewMode === 'output' || touches.size) return; e.preventDefault(); zoomAt(e.clientX || innerWidth / 2, e.clientY || innerHeight / 2, gz0 * e.scale); });
+$('zIn').addEventListener('click', () => zoomAt(innerWidth / 2, innerHeight / 2, view.z * 1.4));
+$('zOut').addEventListener('click', () => zoomAt(innerWidth / 2, innerHeight / 2, view.z / 1.4));
+$('zFit').addEventListener('click', resetView);
+$('zPct').addEventListener('click', resetView);
+
 svg.addEventListener('pointerdown', e => {
+  if (pinch || touches.size > 1) return;
   const t = e.target.dataset?.t; if (!t) return;
   e.preventDefault(); e.stopPropagation();
   const i = +e.target.dataset.i, s = S(), m = M();
@@ -1100,7 +1252,7 @@ svg.addEventListener('pointerdown', e => {
   drawOverlay();
 });
 addEventListener('pointermove', e => {
-  if (!drag) return;
+  if (!drag || pinch) return;
   if (drag.t === 'rot' || drag.t === 'mrot') {
     const s = S(), m = M();
     let d = (Math.atan2(e.clientY - drag.cp[1], e.clientX - drag.cp[0]) - drag.a0) / DEG;
@@ -1129,8 +1281,13 @@ addEventListener('pointermove', e => {
 });
 addEventListener('pointerup', () => { if (drag) { drag = null; snapMark = null; drawOverlay(); } });
 $('stage').addEventListener('pointerdown', e => {
-  if (viewMode !== 'edit') return;
+  if (pinch || touches.size > 1 || e.button === 1) return;
+  const startPan = () => { if (view.z > 1.001 || viewMode === 'preview') { pan = { sx: e.clientX, sy: e.clientY, x0: view.x, y0: view.y, touch: e.pointerType === 'touch' }; document.body.classList.add('panning'); } };
+  if (viewMode !== 'edit') { startPan(); return; }
   const [x, y] = norm(e);
+  const hit = masks.some(m => m.type === 'cut' && inPoly(x, y, m.pts)) || surfaces.some(s => s.visible && inPoly(x, y, outline(s, 2)));
+  startPan();
+  if (!hit) return;
   for (let i = masks.length - 1; i >= 0; i--) if (masks[i].type === 'cut' && inPoly(x, y, masks[i].pts)) { select('mask', masks[i].id); return; }
   for (let i = surfaces.length - 1; i >= 0; i--) if (surfaces[i].visible && inPoly(x, y, outline(surfaces[i], 2))) { select('surface', surfaces[i].id); return; }
 });
@@ -1172,7 +1329,7 @@ function syncSurf() {
   ['fL', 'fR', 'fT', 'fB'].forEach((id, i) => $(id).value = s.feather[i]);
   $('fG').value = s.gamma; $('fGv').textContent = (+s.gamma).toFixed(1);
   $('cX0').value = s.crop[0]; $('cY0').value = s.crop[1]; $('cX1').value = s.crop[2]; $('cY1').value = s.crop[3];
-  syncDims(); syncShapes(); syncAngle();
+  syncDims(); syncShapes(); syncAngle(); if (typeof syncEmpty === 'function') syncEmpty();
 }
 const onS = (id, ev, fn) => bind(id, ev, e => { const s = S(); if (s) { fn(s, e.target); drawOverlay(); } });
 onS('pName', 'input', (s, t) => { s.name = t.value; renderSurfList(); });
@@ -1422,7 +1579,7 @@ function renderMasks() {
     const d = document.createElement('div');
     d.className = 'item' + (sel.kind === 'mask' && sel.id === m.id ? ' sel' : '');
     d.innerHTML = `<span class="sw" style="background:${m.type === 'cut' ? '#ff5d73' : '#ffc94d'}"></span><span class="nm"></span><span class="meta">${m.type === 'cut' ? 'cut' : 'only'}</span>`;
-    d.querySelector('.nm').textContent = m.name; d.onclick = () => { select('mask', m.id); $('maskSec').open = true; };
+    d.querySelector('.nm').textContent = m.name; d.onclick = () => select('mask', m.id);
     L.appendChild(d);
   });
   const m = M(); $('mProps').style.display = m ? '' : 'none';
@@ -1527,8 +1684,8 @@ function setMode(m) {
   document.body.classList.toggle('output', m === 'output'); document.body.classList.toggle('preview', m === 'preview');
   $('mEdit').classList.toggle('on', m === 'edit'); $('mPrev').classList.toggle('on', m === 'preview'); $('mOut').classList.toggle('on', m === 'output');
   $('badge').textContent = m === 'preview' ? 'PREVIEW · SIMULATED IN ROOM' : 'EDIT';
-  if (m === 'preview') $('prevSec').open = true;
-  drawOverlay();
+  
+  fitCanvas();
 }
 bind('mEdit', 'click', () => setMode('edit'));
 bind('mPrev', 'click', () => setMode('preview'));
@@ -1544,7 +1701,7 @@ function applyRes(v) {
   if (v === 'screen') setOutput(Math.round(screen.width * (devicePixelRatio > 1 ? 1 : 1)), Math.round(screen.height));
   else { const [w, h] = v.split('x').map(Number); setOutput(w, h); }
 }
-bind('collapse', 'click', () => { const p = $('panel'); p.classList.toggle('collapsed'); $('collapse').textContent = p.classList.contains('collapsed') ? '+' : '–'; });
+bind('collapse', 'click', () => openTab(null));
 function toggleFS() {
   try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => toast('Fullscreen blocked here — use the browser’s own fullscreen')); else document.exitFullscreen(); }
   catch (e) { toast('Fullscreen not available'); }
@@ -1592,6 +1749,9 @@ addEventListener('keydown', e => {
     if (m) rotateMask(m, d); else if (s) { rotateSurface(s, d); syncAngle(); }
     return drawOverlay();
   }
+  if (k === '+' || k === '=') return zoomAt(innerWidth / 2, innerHeight / 2, view.z * 1.4);
+  if (k === '-' || k === '_') return zoomAt(innerWidth / 2, innerHeight / 2, view.z / 1.4);
+  if (k === '0') return resetView();
   if (k === 'g' || k === 'G') { grid.show = !grid.show; syncGrid(); return drawOverlay(); }
   if (k === 'm' || k === 'M') { warpMode = warpMode === 'mesh' ? 'corner' : 'mesh'; syncSurf(); return drawOverlay(); }
   if ((k === 'Delete' || k === 'Backspace')) { if (m) $('mDel').click(); else delSurface(); return; }
@@ -1613,6 +1773,58 @@ addEventListener('keydown', e => {
 addEventListener('resize', fitCanvas);
 
 // =====================================================================
+// Bottom tab bar
+// =====================================================================
+const ICON = {
+  layers: '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17.5 9 4.5 9-4.5" opacity=".6"/>',
+  content: '<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="9.5" r="1.8"/><path d="m4 17 5.5-5 4 3.5L17 12l4 4"/>',
+  shape: '<circle cx="8" cy="8" r="4.5"/><path d="m16.5 10.5 5 9h-10Z"/><rect x="3.5" y="14" width="7" height="7" rx="1"/>',
+  warp: '<path d="M4 5c5 2 11 2 16 0v14c-5-2-11-2-16 0Z"/><path d="M9.5 5.6v12.8M14.5 5.6v12.8M4 12c5 1.4 11 1.4 16 0" opacity=".6"/>',
+  show: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5.5 3.5-5.5 3.5Z" fill="currentColor"/>',
+  room: '<path d="M4 8h3l1.5-2.5h7L17 8h3v11H4Z"/><circle cx="12" cy="13" r="3.5"/>',
+  setup: '<path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2" fill="#0b0d11"/><circle cx="15" cy="12" r="2" fill="#0b0d11"/><circle cx="8" cy="18" r="2" fill="#0b0d11"/>',
+};
+const TABS = [
+  ['layers', 'Layers', ['surfSec', 'maskSec']],
+  ['content', 'Content', ['sProps']],
+  ['shape', 'Shape', ['shapeSec', 'dimSec']],
+  ['warp', 'Warp', ['warpSec', 'blendSec']],
+  ['show', 'Show', ['showTop', 'cueSec', 'audioSec']],
+  ['room', 'Room', ['refSec', 'prevSec']],
+  ['setup', 'Setup', ['dispSec', 'gridSec', 'outSec', 'saveSec', 'keysSec']],
+];
+const NEEDS_SURF = { content: 'Select a surface on the canvas or in <b>Layers</b> to change its content.', warp: 'Select a surface to warp, rotate or blend it.' };
+let curTab = null;
+(() => {
+  const bar = $('tabbar'), panes = $('panes');
+  TABS.forEach(([k, label, ids]) => {
+    const b = document.createElement('button'); b.dataset.tab = k; b.setAttribute('aria-label', label);
+    b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg><span>${label}</span>`;
+    b.onclick = () => openTab(curTab === k ? null : k);
+    bar.appendChild(b);
+    const pane = document.createElement('div'); pane.className = 'pane'; pane.dataset.tab = k;
+    if (NEEDS_SURF[k]) { const e = document.createElement('div'); e.className = 'empty'; e.innerHTML = NEEDS_SURF[k]; pane.appendChild(e); }
+    ids.forEach((id, n) => { const el = $(id); if (!el) return; el.open = true; pane.appendChild(el);
+      const sm = el.querySelector('summary'); if (n === 0 && sm && sm.textContent.trim().toLowerCase() === label.toLowerCase()) sm.style.display = 'none'; });
+    panes.appendChild(pane);
+  });
+  // keep sections permanently open inside panes
+  panes.querySelectorAll('details').forEach(d => d.addEventListener('toggle', () => { if (!d.open) d.open = true; }));
+})();
+function openTab(k) {
+  curTab = k;
+  $('panel').classList.toggle('closed', !k);
+  document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === k));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.tab === k));
+  if (k) { $('sheetTitle').textContent = TABS.find(t => t[0] === k)[1]; $('panel').scrollTop = 0; }
+  syncEmpty();
+  if (k === 'shape' || k === 'warp') updateDimInfo();
+}
+function syncEmpty() { const s = S(); document.querySelectorAll('.pane .empty').forEach(e => e.style.display = s ? 'none' : ''); }
+// the dims info refresh used to check its section was open; now check its tab
+const dimVisible = () => curTab === 'shape';
+
+// =====================================================================
 // Boot
 // =====================================================================
 setOutput(1920, 1080);
@@ -1625,7 +1837,9 @@ if (!restored) {
   const b = makeSurface(1); b.name = 'Box face'; b.src = 'edges'; b.c = [[.64, .3], [.88, .36], [.86, .74], [.66, .7]]; surfaces.push(b);
   sel = { kind: 'surface', id: a.id };
 }
-syncPreview(); syncGrid(); setMode('edit'); renderAll(); fitCanvas();
+syncPreview(); syncGrid(); setMode('edit'); renderAll();
+openTab(innerWidth > 720 ? 'layers' : null);
+fitCanvas();
 requestAnimationFrame(frame);
 })();
 </script>

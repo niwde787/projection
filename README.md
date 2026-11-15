@@ -11,6 +11,7 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 - **Edge blending & crop**: soft edges, gamma, and a one-click 2-projector split
 - **Sources**: test grid, solid, gradient, scan bars, pulse, edge chase, rings, audio spectrum, your own image/video, or a copy of another surface
 - **Shapes**: 20 surface shapes: rectangle, square, rounded rect/square, circle, ellipse, triangle, rounded triangle, diamond, trapezoid, parallelogram, pentagon, hexagon, octagon, star, rounded star, 6-point star, hexagram, cross, drop, with adjustable edge softness
+- **Touch-friendly UI**: bottom tab bar (Layers, Content, Shape, Warp, Show, Room, Setup) with pop-up sheets; pinch to zoom and two-finger pan, mouse-wheel/trackpad zoom, zoom bar with Fit
 - **Rotate** surfaces and masks: drag the ↻ handle (snaps to 45°, Shift = 15° steps), type an angle, ±90°, Level, or `[` `]` keys
 - **Grid & snap**: alignment grid, snap to grid, snap corners/edges between surfaces and masks, snap to output edges, project the grid for lining up the projector (hold Alt to disable snap)
 - **Dimensions & canvas size**: enter a surface's real width × height to get its aspect ratio, projector pixels and the canvas size to design content at; estimate the other surfaces from one measurement; export blank template PNGs with a real-world grid
@@ -29,6 +30,7 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 | `M` | toggle mesh warp |
 | `G` | toggle grid |
 | `[` `]` (+Shift) | rotate 1° (15°) |
+| `+` / `-` / `0` | zoom in / out / fit |
 | `Alt` (hold) | drag without snapping |
 | `N` / `Del` | new / delete surface |
 | `Tab` | next surface |
