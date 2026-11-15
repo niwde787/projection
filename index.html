@@ -72,7 +72,7 @@
 
 <div id="panel">
   <div class="head">
-    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.5 · shapes · grid &amp; snap · mesh · masks · cues</div></div>
+    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.6 · rotate · shapes · grid &amp; snap · mesh · masks</div></div>
     <button id="collapse" title="Collapse panel">–</button>
   </div>
 
@@ -121,7 +121,7 @@
     </div>
     <div class="row">
       <button id="vis">Hide</button><button id="up">Raise</button><button id="down">Lower</button>
-      <button id="flipH">Flip H</button><button id="flipV">Flip V</button><button id="rot">Rotate</button>
+      <button id="flipH">Flip H</button><button id="flipV">Flip V</button><button id="rot" title="Rotate the content inside the surface by 90°">Rotate content</button>
     </div>
   </details>
 
@@ -157,6 +157,9 @@
       <select id="meshSize"><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option><option value="4">4×4</option><option value="5">5×5</option><option value="6">6×6</option><option value="8">8×8</option></select>
       <button id="meshReset">Flatten mesh</button>
     </div>
+    <div class="row"><label>Rotation</label><input type="number" id="rAng" step="1" style="width:70px"><span style="color:var(--dim)">°</span>
+      <button id="rL90" title="Rotate 90° left">⟲ 90°</button><button id="rR90" title="Rotate 90° right">⟳ 90°</button></div>
+    <div class="row"><input type="range" id="rSlide" min="-180" max="180" step="1"><button id="rLevel" title="Make the top edge level">Level</button></div>
     <div class="row"><button id="cornerReset">Reset corners</button></div>
     <div class="tiny">Corner pin handles flat surfaces in perspective. Mesh mode adds a grid of points on top of that, so you can bend content around columns, curved walls or uneven shapes. Changing the grid size flattens the mesh.</div>
   </details>
@@ -182,6 +185,7 @@
       <div class="row"><label>Name</label><input type="text" id="mName" style="flex:1;min-width:0"></div>
       <div class="row"><label>Type</label><select id="mType"><option value="cut">Cut out (block light inside)</option><option value="only">Show only inside</option></select></div>
       <div class="row"><label>Feather</label><input type="range" id="mFeather" min="0" max="1" step="0.01"></div>
+      <div class="row"><label>Rotate</label><button id="mR15l">⟲15°</button><button id="mR15r">⟳15°</button><button id="mR90l">⟲90°</button><button id="mR90r">⟳90°</button></div>
       <div class="row"><button id="mPtAdd">+ Point</button><button id="mPtDel">− Point</button><button id="mDel" class="danger">Delete mask</button></div>
     </div>
     <div class="tiny">Masks apply to the whole output. Use cut-outs to keep light off windows, doors, TVs or people's faces. Drag the points, or use <b>+ Point</b> to add one after the selected point for odd shapes.</div>
@@ -270,6 +274,7 @@
   <kbd>1</kbd>–<kbd>4</kbd> corner · <kbd>←↑→↓</kbd> nudge (<kbd>Shift</kbd> ×10) · <kbd>M</kbd> mesh<br>
   <kbd>Tab</kbd> next · <kbd>N</kbd> new · <kbd>Del</kbd> delete · <kbd>Space</kbd> GO cue<br>
   <kbd>G</kbd> grid · hold <kbd>Alt</kbd> while dragging = no snap<br>
+  <kbd>[</kbd> <kbd>]</kbd> rotate 1° (<kbd>Shift</kbd> 15°) · drag ↻ handle to rotate<br>
   <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
 </div>
 <div id="toast"></div>
@@ -440,6 +445,25 @@ function snapVerts(s) {
   if (!isRectShape(s)) { const pts = shapePts(s.shape); if (pts.length <= 16) pts.forEach(p => v.push(f(p[0], p[1]))); v.push(f(.5, .5)); }
   return v;
 }
+
+// ---------- rotation (done in output-pixel space so angles are true) ----------
+const DEG = Math.PI / 180;
+function rotPts(pts, c, deg) {
+  const cs = Math.cos(deg * DEG), sn = Math.sin(deg * DEG);
+  return pts.map(([x, y]) => { const dx = (x - c[0]) * out.w, dy = (y - c[1]) * out.h; return [c[0] + (dx * cs - dy * sn) / out.w, c[1] + (dx * sn + dy * cs) / out.h]; });
+}
+function rotVecs(v, deg) {
+  const cs = Math.cos(deg * DEG), sn = Math.sin(deg * DEG);
+  return v.map(([x, y]) => { const dx = x * out.w, dy = y * out.h; return [(dx * cs - dy * sn) / out.w, (dx * sn + dy * cs) / out.h]; });
+}
+function angleOf(s) { const f = mapper(s), a = f(0, .5), b = f(1, .5); return Math.atan2((b[1] - a[1]) * out.h, (b[0] - a[0]) * out.w) / DEG; }
+const normAng = a => { a = ((a + 180) % 360 + 360) % 360 - 180; return Math.abs(a + 180) < 1e-9 ? 180 : a; };
+function rotateSurface(s, deg, base) {
+  const b = base || { c: s.c, off: s.mesh.off, ctr: mapper(s)(.5, .5) };
+  s.c = rotPts(b.c, b.ctr, deg); s.mesh.off = rotVecs(b.off, deg);
+}
+const centroid = pts => [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length];
+function rotateMask(m, deg) { m.pts = rotPts(m.pts, centroid(m.pts), deg); masksDirty = true; }
 
 function boundary(s, n = 16) {
   const f = mapper(s), pts = [];
@@ -923,6 +947,12 @@ function rect() { return cvs.getBoundingClientRect(); }
 function toPx(p, r = rect()) { return [r.left + p[0] * r.width, r.top + p[1] * r.height]; }
 const coarse = matchMedia('(pointer:coarse)').matches;
 const HR = coarse ? 14 : 9;
+function rotHandle(x, y, col, t) {
+  const r = HR + 1;
+  return `<g class="h" data-t="${t}" style="cursor:grab"><circle data-t="${t}" cx="${x}" cy="${y}" r="${r}" fill="rgba(0,0,0,.65)" stroke="${col}" stroke-width="2"/>` +
+    `<path data-t="${t}" d="M${x - r * .45} ${y - r * .1} A${r * .5} ${r * .5} 0 1 1 ${x - r * .05} ${y + r * .5}" fill="none" stroke="${col}" stroke-width="1.8"/>` +
+    `<path data-t="${t}" d="M${x - r * .75} ${y - r * .35} L${x - r * .45} ${y - r * .05} L${x - r * .15} ${y - r * .4}" fill="none" stroke="${col}" stroke-width="1.8"/></g>`;
+}
 function drawOverlay() {
   if (viewMode !== 'edit') { svg.innerHTML = ''; return; }
   const r = rect(), mode = $('gGuides').value, P = p => toPx(p, r);
@@ -945,6 +975,9 @@ function drawOverlay() {
     o += `<polygon points="${pts.map(p => p.join(',')).join(' ')}" fill="${col}" fill-opacity="${isSel ? .12 : .05}" stroke="${col}" stroke-width="${isSel ? 1.5 : 1}" stroke-dasharray="6 4"/>`;
     if (isSel) {
       const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+      { const top = Math.min(...pts.map(p => p[1])), hy = top - 34;
+        o += `<line x1="${cx}" y1="${top}" x2="${cx}" y2="${hy}" stroke="${col}" stroke-opacity=".6"/>`;
+        o += rotHandle(cx, hy, col, 'mrot'); }
       o += `<rect class="h" data-t="mmove" x="${cx - 8}" y="${cy - 8}" width="16" height="16" transform="rotate(45 ${cx} ${cy})" fill="rgba(0,0,0,.6)" stroke="${col}" stroke-width="2"/>`;
       pts.forEach((p, i) => { o += `<circle class="h" data-t="mpt" data-i="${i}" cx="${p[0]}" cy="${p[1]}" r="${i === selMaskPt ? HR + 1 : HR - 2}" fill="${i === selMaskPt ? col : 'rgba(0,0,0,.6)'}" stroke="${col}" stroke-width="2"/>`; });
     }
@@ -963,6 +996,11 @@ function drawOverlay() {
       o += `<g style="pointer-events:none"><rect x="${lx - label.length * 3.6 - 6}" y="${ly - 10}" width="${label.length * 7.2 + 12}" height="20" rx="10" fill="rgba(0,0,0,.7)" stroke="${col}" stroke-opacity=".6"/><text x="${lx}" y="${ly + 4}" text-anchor="middle" fill="${col}" font-size="12" font-family="ui-monospace,monospace">${label}</text></g>`;
     }
     if (!isSel) return;
+    { const f = mapper(s), c = P(f(.5, .5)), tp = P(f(.5, 0));
+      let vx = tp[0] - c[0], vy = tp[1] - c[1]; const L = Math.hypot(vx, vy) || 1; vx /= L; vy /= L;
+      const hx = tp[0] + vx * 34, hy = tp[1] + vy * 34;
+      o += `<line x1="${tp[0]}" y1="${tp[1]}" x2="${hx}" y2="${hy}" stroke="${col}" stroke-opacity=".6"/>`;
+      o += rotHandle(hx, hy, col, 'rot'); }
     { const c = P(mapper(s)(.5, .5));
       o += `<rect class="h" data-t="move" x="${c[0] - 8}" y="${c[1] - 8}" width="16" height="16" transform="rotate(45 ${c[0]} ${c[1]})" fill="rgba(0,0,0,.55)" stroke="${col}" stroke-width="2"/>`; }
     if (warpMode === 'mesh') {
@@ -986,6 +1024,7 @@ function drawOverlay() {
       });
     }
   });
+  if (drag && drag.angLabel != null) { const p = drag.labelAt; o += `<g style="pointer-events:none"><rect x="${p[0] + 16}" y="${p[1] - 22}" width="54" height="20" rx="10" fill="rgba(0,0,0,.8)" stroke="#fff" stroke-opacity=".5"/><text x="${p[0] + 43}" y="${p[1] - 8}" text-anchor="middle" fill="#fff" font-size="12" font-family="ui-monospace,monospace">${drag.angLabel.toFixed(0)}°</text></g>`; }
   if (snapMark && drag) { const p = P(snapMark.p); o += `<circle cx="${p[0]}" cy="${p[1]}" r="${snapMark.k === 'v' ? 9 : 6}" fill="none" stroke="#ffffff" stroke-width="2"/><circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#ffffff"/>`; }
   svg.innerHTML = o;
   if (typeof updateDimInfo === 'function' && $('dimSec').open) updateDimInfo();
@@ -1048,6 +1087,13 @@ svg.addEventListener('pointerdown', e => {
   if (t === 'corner') selCorner = i;
   if (t === 'mesh') selMesh = i;
   if (t === 'mpt') selMaskPt = i;
+  if (t === 'rot' || t === 'mrot') {
+    const r = rect(), ctr = t === 'rot' ? mapper(s)(.5, .5) : centroid(m.pts), cp = toPx(ctr, r);
+    drag = { t, ctr, cp, a0: Math.atan2(e.clientY - cp[1], e.clientX - cp[0]), base0: t === 'rot' ? angleOf(s) : 0,
+      origC: s && s.c.map(p => [...p]), origOff: s && s.mesh.off.map(p => [...p]), origPts: m && m.pts.map(p => [...p]), angLabel: null, labelAt: [e.clientX, e.clientY] };
+    try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    return;
+  }
   drag = { t, i, start: norm(e), origC: s && s.c.map(p => [...p]), origOff: s && s.mesh.off.map(p => [...p]), origPts: m && m.pts.map(p => [...p]),
     T: buildSnapTargets(s ? s.id : null, m ? m.id : null), origSV: s && snapVerts(s) };
   try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
@@ -1055,6 +1101,16 @@ svg.addEventListener('pointerdown', e => {
 });
 addEventListener('pointermove', e => {
   if (!drag) return;
+  if (drag.t === 'rot' || drag.t === 'mrot') {
+    const s = S(), m = M();
+    let d = (Math.atan2(e.clientY - drag.cp[1], e.clientX - drag.cp[0]) - drag.a0) / DEG;
+    if (e.shiftKey) d = Math.round((drag.base0 + d) / 15) * 15 - drag.base0;
+    else if (!e.altKey) { const tot = drag.base0 + d, k = Math.round(tot / 45) * 45; if (Math.abs(tot - k) < 2.5) d = k - drag.base0; }
+    if (drag.t === 'rot' && s) rotateSurface(s, d, { c: drag.origC, off: drag.origOff, ctr: drag.ctr });
+    if (drag.t === 'mrot' && m) { m.pts = rotPts(drag.origPts, drag.ctr, d); masksDirty = true; }
+    drag.angLabel = normAng(drag.base0 + d); drag.labelAt = [e.clientX, e.clientY];
+    drawOverlay(); syncAngle(); return;
+  }
   const [x, y] = norm(e), s = S(), m = M(), noSnap = e.altKey;
   let dx = x - drag.start[0], dy = y - drag.start[1];
   snapMark = null;
@@ -1116,7 +1172,7 @@ function syncSurf() {
   ['fL', 'fR', 'fT', 'fB'].forEach((id, i) => $(id).value = s.feather[i]);
   $('fG').value = s.gamma; $('fGv').textContent = (+s.gamma).toFixed(1);
   $('cX0').value = s.crop[0]; $('cY0').value = s.crop[1]; $('cX1').value = s.crop[2]; $('cY1').value = s.crop[3];
-  syncDims(); syncShapes();
+  syncDims(); syncShapes(); syncAngle();
 }
 const onS = (id, ev, fn) => bind(id, ev, e => { const s = S(); if (s) { fn(s, e.target); drawOverlay(); } });
 onS('pName', 'input', (s, t) => { s.name = t.value; renderSurfList(); });
@@ -1149,6 +1205,19 @@ bind('wCorner', 'click', () => { warpMode = 'corner'; syncSurf(); drawOverlay();
 bind('wMesh', 'click', () => { warpMode = 'mesh'; syncSurf(); drawOverlay(); });
 onS('meshSize', 'change', (s, t) => { s.mesh = defMesh(+t.value); selMesh = -1; });
 onS('meshReset', 'click', s => { s.mesh = defMesh(s.mesh.cols); });
+function syncAngle() {
+  const s = S(); if (!s) return;
+  const a = Math.round(normAng(angleOf(s)) * 10) / 10;
+  if (document.activeElement !== $('rAng')) $('rAng').value = a;
+  if (document.activeElement !== $('rSlide')) $('rSlide').value = a;
+}
+const setAngle = target => { const s = S(); if (!s) return; rotateSurface(s, normAng(target - angleOf(s))); syncAngle(); drawOverlay(); };
+bind('rAng', 'change', e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setAngle(v); });
+bind('rSlide', 'input', e => setAngle(+e.target.value));
+onS('rL90', 'click', s => { rotateSurface(s, -90); syncAngle(); });
+onS('rR90', 'click', s => { rotateSurface(s, 90); syncAngle(); });
+onS('rLevel', 'click', s => { rotateSurface(s, -angleOf(s)); syncAngle(); });
+[['mR15l', -15], ['mR15r', 15], ['mR90l', -90], ['mR90r', 90]].forEach(([id, d]) => bind(id, 'click', () => { const m = M(); if (m) { rotateMask(m, d); drawOverlay(); } }));
 onS('cornerReset', 'click', s => { s.c = [[.32, .25], [.62, .25], [.62, .68], [.32, .68]]; });
 bind('add', 'click', addSurface);
 bind('dup', 'click', () => {
@@ -1518,6 +1587,11 @@ addEventListener('keydown', e => {
   if (k === 's' || k === 'S') return save();
   if (k === 'n' || k === 'N') return addSurface();
   if (k === ' ') { e.preventDefault(); return goNext(); }
+  if (k === '[' || k === ']' || k === '{' || k === '}') {
+    const d = (k === '[' || k === '{' ? -1 : 1) * (e.shiftKey ? 15 : 1);
+    if (m) rotateMask(m, d); else if (s) { rotateSurface(s, d); syncAngle(); }
+    return drawOverlay();
+  }
   if (k === 'g' || k === 'G') { grid.show = !grid.show; syncGrid(); return drawOverlay(); }
   if (k === 'm' || k === 'M') { warpMode = warpMode === 'mesh' ? 'corner' : 'mesh'; syncSurf(); return drawOverlay(); }
   if ((k === 'Delete' || k === 'Backspace')) { if (m) $('mDel').click(); else delSurface(); return; }
