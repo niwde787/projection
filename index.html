@@ -72,7 +72,7 @@
 
 <div id="panel">
   <div class="head">
-    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.4 · mesh warp · masks · blend · cues · dimensions</div></div>
+    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.5 · shapes · grid &amp; snap · mesh · masks · cues</div></div>
     <button id="collapse" title="Collapse panel">–</button>
   </div>
 
@@ -123,6 +123,15 @@
       <button id="vis">Hide</button><button id="up">Raise</button><button id="down">Lower</button>
       <button id="flipH">Flip H</button><button id="flipV">Flip V</button><button id="rot">Rotate</button>
     </div>
+  </details>
+
+  <details open id="shapeSec">
+    <summary>Shape</summary>
+    <div id="shapeGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:8px"></div>
+    <div class="row"><span class="chk"><input type="checkbox" id="shNew"> Tap adds a new surface</span></div>
+    <div class="row"><label>Softness</label><input type="range" id="shSoft" min="0" max="1" step="0.01"></div>
+    <div class="row"><button id="shNat">Reset to natural proportions</button></div>
+    <div class="tiny">The shape cuts your content to that outline inside the surface's box. Corner pin and mesh still warp it, so a circle on a wall seen at an angle stays correct. Tick <b>Tap adds a new surface</b> to drop new shapes instead of changing the selected one.</div>
   </details>
 
   <details open id="dimSec">
@@ -219,6 +228,19 @@
     <div class="tiny">A cue saves the current look of every surface (source, colors, opacity, speed, audio, visibility). Press GO to crossfade to the next cue; click a cue to jump to it.</div>
   </details>
 
+  <details open id="gridSec">
+    <summary>Grid &amp; snap</summary>
+    <div class="row">
+      <span class="chk"><input type="checkbox" id="gShow"> Show grid (G)</span>
+      <select id="gSize" style="flex:0 0 96px"><option value="20">20 px</option><option value="40">40 px</option><option value="60">60 px</option><option value="80">80 px</option><option value="120">120 px</option><option value="160">160 px</option></select>
+    </div>
+    <div class="row"><span class="chk"><input type="checkbox" id="snGrid"> Snap to grid</span></div>
+    <div class="row"><span class="chk"><input type="checkbox" id="snSurf" checked> Snap to other surfaces &amp; masks</span></div>
+    <div class="row"><span class="chk"><input type="checkbox" id="snFrame" checked> Snap to output edges</span></div>
+    <div class="row"><span class="chk"><input type="checkbox" id="gOut"> Project grid (for lining up the projector)</span></div>
+    <div class="tiny">Corners, mesh points and mask points snap to other surfaces' corners and edges, so panels can sit flush against each other without gaps. Grid size is in output pixels. Hold <kbd>Alt</kbd> while dragging to turn snapping off for a moment.</div>
+  </details>
+
   <details id="outSec">
     <summary>Output</summary>
     <div class="row"><label>Resolution</label>
@@ -247,6 +269,7 @@
   Drag handles · drag center ◆ to move · click a surface to select<br>
   <kbd>1</kbd>–<kbd>4</kbd> corner · <kbd>←↑→↓</kbd> nudge (<kbd>Shift</kbd> ×10) · <kbd>M</kbd> mesh<br>
   <kbd>Tab</kbd> next · <kbd>N</kbd> new · <kbd>Del</kbd> delete · <kbd>Space</kbd> GO cue<br>
+  <kbd>G</kbd> grid · hold <kbd>Alt</kbd> while dragging = no snap<br>
   <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
 </div>
 <div id="toast"></div>
@@ -276,6 +299,8 @@ let preview = { amb: .22, gain: 1.15, black: .025, hot: .35, bloom: .55, cmp: fa
 let ref = { data: null, opacity: .8, fit: 'contain', look: 'normal', sim: false };
 let nextId = 1;
 let unit = 'in', canvasMode = 'native';
+let grid = { show: false, size: 40, snapGrid: false, snapSurf: true, snapFrame: true, out: false };
+let snapMark = null;
 const UNIT_CM = { in: 2.54, ft: 30.48, cm: 1, m: 100 };
 const UNIT_LBL = { in: 'in', ft: 'ft', cm: 'cm', m: 'm' };
 const rt = new Map();             // per-surface runtime (textures, media)
@@ -290,7 +315,7 @@ function makeSurface(i = surfaces.length) {
     visible: true, rot: 0, flipH: false, flipV: false, audio: 0, band: 'level',
     c: [[.32 + ox, .25 + oy], [.62 + ox, .25 + oy], [.62 + ox, .68 + oy], [.32 + ox, .68 + oy]],
     mesh: defMesh(3), feather: [0, 0, 0, 0], gamma: 2.2, crop: [0, 0, 1, 1],
-    dims: { w: 0, h: 0 }, dimsEst: false,
+    dims: { w: 0, h: 0 }, dimsEst: false, shape: 'rect', soft: 0,
   };
 }
 const S = () => sel.kind === 'surface' ? surfaces.find(s => s.id === sel.id) : null;
@@ -341,6 +366,81 @@ function mapper(s) {
   const H = homog(s.c), act = meshActive(s);
   return (u, v) => { const p = H(u, v); if (!act) return p; const o = meshOff(s.mesh, u, v); return [p[0] + o[0], p[1] + o[1]]; };
 }
+// ---------- shapes (unit box, y down) ----------
+const SHAPES = [
+  ['rect', 'Rectangle', 1.6], ['square', 'Square', 1], ['rrect', 'Rounded rect', 1.6], ['rsquare', 'Rounded square', 1],
+  ['circle', 'Circle', 1], ['ellipse', 'Ellipse', 1.7], ['triangle', 'Triangle', 1.15], ['rtriangle', 'Rounded triangle', 1.15],
+  ['diamond', 'Diamond', .75], ['trapezoid', 'Trapezoid', 1.7], ['parallelogram', 'Parallelogram', 1.7], ['pentagon', 'Pentagon', 1.05],
+  ['hexagon', 'Hexagon', 1.155], ['octagon', 'Octagon', 1], ['star5', 'Star', 1.05], ['rstar', 'Rounded star', 1.05],
+  ['star6', '6-point star', .87], ['hexagram', 'Hexagram', .87], ['cross', 'Cross', 1], ['drop', 'Drop', .65],
+];
+const SHAPE_NAT = Object.fromEntries(SHAPES.map(([k, , a]) => [k, a]));
+function normPts(pts) {
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  return pts.map(([x, y]) => [(x - x0) / (x1 - x0 || 1), (y - y0) / (y1 - y0 || 1)]);
+}
+function regPoly(n, start = -90) { const p = []; for (let i = 0; i < n; i++) { const a = (start + i * 360 / n) * Math.PI / 180; p.push([Math.cos(a), Math.sin(a)]); } return normPts(p); }
+function starPts(n, inner) { const p = []; for (let i = 0; i < n * 2; i++) { const a = (-90 + i * 180 / n) * Math.PI / 180, r = i % 2 ? inner : 1; p.push([Math.cos(a) * r, Math.sin(a) * r]); } return normPts(p); }
+function roundPoly(pts, rad, steps = 8) {
+  const out = [], n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n];
+    const d1 = Math.hypot(p0[0] - p1[0], p0[1] - p1[1]), d2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const r = Math.min(rad, d1 / 2, d2 / 2);
+    const a = [p1[0] + (p0[0] - p1[0]) * r / d1, p1[1] + (p0[1] - p1[1]) * r / d1];
+    const b = [p1[0] + (p2[0] - p1[0]) * r / d2, p1[1] + (p2[1] - p1[1]) * r / d2];
+    for (let k = 0; k <= steps; k++) { const t = k / steps, u = 1 - t; out.push([u * u * a[0] + 2 * u * t * p1[0] + t * t * b[0], u * u * a[1] + 2 * u * t * p1[1] + t * t * b[1]]); }
+  }
+  return out;
+}
+function ellipsePts(n = 96) { const p = []; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; p.push([.5 + .5 * Math.cos(a), .5 + .5 * Math.sin(a)]); } return p; }
+const RECT = [[0, 0], [1, 0], [1, 1], [0, 1]];
+const _shapeCache = {};
+function shapePts(k) {
+  if (_shapeCache[k]) return _shapeCache[k];
+  let p;
+  switch (k) {
+    case 'rrect': p = roundPoly(RECT, .12); break;
+    case 'rsquare': p = roundPoly(RECT, .18); break;
+    case 'circle': case 'ellipse': p = ellipsePts(); break;
+    case 'triangle': p = [[.5, 0], [1, 1], [0, 1]]; break;
+    case 'rtriangle': p = normPts(roundPoly([[.5, 0], [1, 1], [0, 1]], .14)); break;
+    case 'diamond': p = [[.5, 0], [1, .5], [.5, 1], [0, .5]]; break;
+    case 'trapezoid': p = [[.17, 0], [.83, 0], [1, 1], [0, 1]]; break;
+    case 'parallelogram': p = [[.14, 0], [1, 0], [.86, 1], [0, 1]]; break;
+    case 'pentagon': p = regPoly(5); break;
+    case 'hexagon': p = regPoly(6, 0); break;
+    case 'octagon': p = regPoly(8, 22.5); break;
+    case 'star5': p = starPts(5, .4); break;
+    case 'rstar': p = normPts(roundPoly(starPts(5, .45), .06, 6)); break;
+    case 'star6': p = starPts(6, .45); break;
+    case 'hexagram': p = starPts(6, .577); break;
+    case 'cross': { const a = .32, b = .68; p = [[a, 0], [b, 0], [b, a], [1, a], [1, b], [b, b], [b, 1], [a, 1], [a, b], [0, b], [0, a], [a, a]]; break; }
+    case 'drop': { p = []; for (let i = 0; i < 80; i++) { const t = i / 80 * Math.PI * 2; p.push([Math.sin(t) * Math.pow(Math.sin(t / 2), 1.1), -Math.cos(t)]); } p = normPts(p); break; }
+    default: p = RECT;
+  }
+  return (_shapeCache[k] = p);
+}
+const isRectShape = s => (s.shape || 'rect') === 'rect' || s.shape === 'square';
+// outline of the surface in normalized output coords (densified so mesh curvature shows)
+function outline(s, dens = 4) {
+  if (isRectShape(s)) return boundary(s, 16);
+  const f = mapper(s), pts = shapePts(s.shape), out = [], few = pts.length <= 16;
+  pts.forEach((p, i) => {
+    if (!few) { out.push(f(p[0], p[1])); return; }
+    const q = pts[(i + 1) % pts.length];
+    for (let k = 0; k < dens; k++) { const t = k / dens; out.push(f(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)); }
+  });
+  return out;
+}
+// sharp vertices worth snapping to
+function snapVerts(s) {
+  const f = mapper(s), v = s.c.map(p => [...p]);
+  if (!isRectShape(s)) { const pts = shapePts(s.shape); if (pts.length <= 16) pts.forEach(p => v.push(f(p[0], p[1]))); v.push(f(.5, .5)); }
+  return v;
+}
+
 function boundary(s, n = 16) {
   const f = mapper(s), pts = [];
   for (let i = 0; i < n; i++) pts.push(f(i / n, 0));
@@ -379,6 +479,7 @@ precision highp float;
 in vec2 v_uv; out vec4 o;
 uniform sampler2D u_tex; uniform vec4 u_crop; uniform vec2 u_flip; uniform int u_rot;
 uniform vec4 u_feather; uniform float u_gamma; uniform float u_alpha; uniform float u_bright;
+uniform sampler2D u_shape; uniform int u_useShape;
 float curve(float x){ x=clamp(x,0.,1.); float f = x<.5 ? .5*pow(2.*x,2.) : 1.-.5*pow(2.-2.*x,2.); return pow(f, 1./u_gamma); }
 float ramp(float d, float w){ return w<=0.0001 ? 1. : curve(d/w); }
 void main(){
@@ -389,6 +490,7 @@ void main(){
   t=mix(u_crop.xy,u_crop.zw,t);
   vec4 c=texture(u_tex,t);
   float a=ramp(v_uv.x,u_feather.x)*ramp(1.-v_uv.x,u_feather.y)*ramp(v_uv.y,u_feather.z)*ramp(1.-v_uv.y,u_feather.w);
+  if(u_useShape==1) a*=texture(u_shape,v_uv).a;
   o=vec4(c.rgb*u_bright, c.a)*u_alpha*a;
 }`);
 const compP = prog(`#version 300 es
@@ -401,12 +503,19 @@ uniform sampler2D u_proj, u_photo, u_mask;
 uniform int u_mode, u_look, u_sim, u_hasPhoto;
 uniform vec2 u_pscale;
 uniform float u_refOp, u_master, u_amb, u_gain, u_black, u_hot, u_bloom, u_split, u_aspect;
+uniform vec3 u_grid; // x = cell px (0 = off), y = width px, z = height px
 float lum(vec3 c){ return dot(c, vec3(.2126,.7152,.0722)); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.); }
 void main(){
   vec2 uv=v_uv;
   float m=texture(u_mask, vec2(uv.x,1.-uv.y)).r * u_master;
   vec4 P4=texture(u_proj, uv); vec3 P=P4.rgb*m; float A=P4.a*m;
+  if(u_grid.x>0.){
+    vec2 px=vec2(uv.x,1.-uv.y)*u_grid.yz; vec2 g=abs(fract(px/u_grid.x+.5)-.5)*u_grid.x;
+    vec2 c=abs(px-u_grid.yz*.5);
+    float line=step(min(g.x,g.y),.75); float ctr=step(min(c.x,c.y),1.5);
+    P=max(P, vec3(line*.55)); P=max(P, vec3(.24,.88,.75)*ctr); A=max(A,max(line,ctr));
+  }
   if(u_mode==0){ o=vec4(P,1.); return; }
   vec3 ph=vec3(0.); float ins=0.;
   if(u_hasPhoto==1){
@@ -622,6 +731,7 @@ function rebuildMasks() {
   masks.filter(m => m.type === 'only').forEach(m => draw(m, '#fff'));
   masks.filter(m => m.type === 'cut').forEach(m => draw(m, '#000'));
   ctx.filter = 'none';
+  // projected alignment grid is drawn by the composite pass (u_grid)
   gl.bindTexture(gl.TEXTURE_2D, maskTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas);
   masksDirty = false;
@@ -697,6 +807,21 @@ function buildVerts(s) {
     verts[k++] = p[0]; verts[k++] = p[1]; verts[k++] = u; verts[k++] = v;
   }
 }
+const shapeTexCache = new Map();
+const shapeCanvas = document.createElement('canvas'); shapeCanvas.width = shapeCanvas.height = 1024;
+function shapeTex(s) {
+  const soft = Math.round((s.soft || 0) * 20) / 20, key = s.shape + '|' + soft;
+  if (shapeTexCache.has(key)) return shapeTexCache.get(key);
+  const c = shapeCanvas, x = c.getContext('2d'), N = c.width, pts = shapePts(s.shape);
+  x.clearRect(0, 0, N, N); x.filter = soft > 0 ? `blur(${soft * 60}px)` : 'none';
+  const pad = soft > 0 ? soft * 60 : 0, sc = N - 2 * pad;
+  x.fillStyle = '#fff'; x.beginPath();
+  pts.forEach(([u, v], i) => i ? x.lineTo(pad + u * sc, pad + v * sc) : x.moveTo(pad + u * sc, pad + v * sc));
+  x.closePath(); x.fill(); x.filter = 'none';
+  const t = newTex(false); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  shapeTexCache.set(key, t); return t;
+}
 function drawSurfaces() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.viewport(0, 0, out.w, out.h);
@@ -719,6 +844,10 @@ function drawSurfaces() {
     gl.uniform1f(surfP.u.u_gamma, s.gamma);
     gl.uniform1f(surfP.u.u_alpha, s.opacity * r.env);
     gl.uniform1f(surfP.u.u_bright, Math.max(0, bright));
+    const useShape = !isRectShape(s) || (s.soft || 0) > 0;
+    gl.uniform1i(surfP.u.u_useShape, useShape ? 1 : 0);
+    gl.uniform1i(surfP.u.u_shape, 1);
+    if (useShape) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shapeTex(s)); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex(s)); }
     (BLENDS[s.blend] || BLENDS.normal)();
     gl.drawElements(gl.TRIANGLES, IDX_COUNT, gl.UNSIGNED_SHORT, 0);
   });
@@ -748,6 +877,7 @@ function composite(mode) {
   gl.uniform1f(u.u_hot, preview.hot); gl.uniform1f(u.u_bloom, preview.bloom);
   gl.uniform1f(u.u_split, preview.cmp ? preview.split : -1);
   gl.uniform1f(u.u_aspect, ca);
+  gl.uniform3f(u.u_grid, grid.out ? grid.size : 0, out.w, out.h);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.activeTexture(gl.TEXTURE0);
 }
@@ -797,6 +927,16 @@ function drawOverlay() {
   if (viewMode !== 'edit') { svg.innerHTML = ''; return; }
   const r = rect(), mode = $('gGuides').value, P = p => toPx(p, r);
   let o = `<rect x="${r.left}" y="${r.top}" width="${r.width}" height="${r.height}" fill="none" stroke="#2a2f3a" stroke-dasharray="3 5"/>`;
+  if (grid.show) {
+    const gx = grid.size / out.w * r.width, gy = grid.size / out.h * r.height;
+    if (gx >= 4) {
+      let d = '', dm = '';
+      for (let i = 1, x = r.left + gx; x < r.left + r.width - .5; x += gx, i++) (i % 4 ? (d += `M${x} ${r.top}V${r.top + r.height}`) : (dm += `M${x} ${r.top}V${r.top + r.height}`));
+      for (let i = 1, y = r.top + gy; y < r.top + r.height - .5; y += gy, i++) (i % 4 ? (d += `M${r.left} ${y}H${r.left + r.width}`) : (dm += `M${r.left} ${y}H${r.left + r.width}`));
+      o += `<path d="${d}" stroke="#ffffff" stroke-opacity=".07" fill="none"/><path d="${dm}" stroke="#ffffff" stroke-opacity=".16" fill="none"/>`;
+      o += `<path d="M${r.left + r.width / 2} ${r.top}V${r.top + r.height}M${r.left} ${r.top + r.height / 2}H${r.left + r.width}" stroke="#3de0c0" stroke-opacity=".25" fill="none"/>`;
+    }
+  }
   // masks
   masks.forEach(m => {
     const isSel = sel.kind === 'mask' && sel.id === m.id;
@@ -813,8 +953,9 @@ function drawOverlay() {
   surfaces.forEach(s => {
     const isSel = sel.kind === 'surface' && sel.id === s.id;
     if (!isSel && mode !== 'all') return;
-    const col = s.color, b = boundary(s, 16).map(P);
+    const col = s.color, b = outline(s).map(P);
     o += `<polygon points="${b.map(p => p.join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="${isSel ? 1.5 : 1}" stroke-dasharray="${isSel ? '' : '4 4'}" opacity="${isSel ? .95 : .6}"/>`;
+    if (isSel && !isRectShape(s)) { const bx = boundary(s, 8).map(P); o += `<polygon points="${bx.map(p => p.join(',')).join(' ')}" fill="none" stroke="${col}" stroke-dasharray="2 5" opacity=".45"/>`; }
     if (hasDims(s)) {
       const f0 = mapper(s), tp = P(f0(.5, 0)), cc = P(f0(.5, .5));
       const lx = tp[0] + (cc[0] - tp[0]) * .18, ly = tp[1] + (cc[1] - tp[1]) * .18;
@@ -845,6 +986,7 @@ function drawOverlay() {
       });
     }
   });
+  if (snapMark && drag) { const p = P(snapMark.p); o += `<circle cx="${p[0]}" cy="${p[1]}" r="${snapMark.k === 'v' ? 9 : 6}" fill="none" stroke="#ffffff" stroke-width="2"/><circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#ffffff"/>`; }
   svg.innerHTML = o;
   if (typeof updateDimInfo === 'function' && $('dimSec').open) updateDimInfo();
 }
@@ -853,6 +995,51 @@ function drawOverlay() {
 // Pointer interaction
 // =====================================================================
 let drag = null;
+function buildSnapTargets(exclSurf, exclMask) {
+  const V = [], E = [];
+  if (grid.snapSurf) {
+    surfaces.forEach(o => {
+      if (o.id === exclSurf || !o.visible) return;
+      snapVerts(o).forEach(p => V.push(p));
+      const ol = outline(o, 2); ol.forEach((p, i) => E.push([p, ol[(i + 1) % ol.length]]));
+    });
+    masks.forEach(m => { if (m.id === exclMask) return; m.pts.forEach((p, i) => { V.push(p); E.push([p, m.pts[(i + 1) % m.pts.length]]); }); });
+  }
+  if (grid.snapFrame) { RECT.forEach(p => V.push(p)); [.5].forEach(t => { V.push([t, 0]); V.push([t, 1]); V.push([0, t]); V.push([1, t]); }); RECT.forEach((p, i) => E.push([p, RECT[(i + 1) % 4]])); }
+  return { V, E };
+}
+// returns {p, k} snapped point (normalized) or null; k = 'v' vertex, 'e' edge, 'g' grid
+function snapPt(p, T, noGrid) {
+  const r = rect(), sx = r.width, sy = r.height, thr = coarse ? 18 : 11;
+  const dpx = (a, b) => Math.hypot((a[0] - b[0]) * sx, (a[1] - b[1]) * sy);
+  let best = null, bd = thr;
+  T.V.forEach(v => { const d = dpx(p, v); if (d < bd) { bd = d; best = { p: [v[0], v[1]], k: 'v' }; } });
+  if (best) return best;
+  bd = thr * .8;
+  T.E.forEach(([a, b]) => {
+    const ax = a[0] * sx, ay = a[1] * sy, bx = b[0] * sx, by = b[1] * sy, px = p[0] * sx, py = p[1] * sy;
+    const vx = bx - ax, vy = by - ay, L = vx * vx + vy * vy; if (L < 1) return;
+    const t = clamp(((px - ax) * vx + (py - ay) * vy) / L, 0, 1), qx = ax + vx * t, qy = ay + vy * t, d = Math.hypot(px - qx, py - qy);
+    if (d < bd) { bd = d; best = { p: [qx / sx, qy / sy], k: 'e' }; }
+  });
+  if (best) return best;
+  if (grid.snapGrid && !noGrid) {
+    const gx = grid.size / out.w, gy = grid.size / out.h;
+    return { p: [Math.round(p[0] / gx) * gx, Math.round(p[1] / gy) * gy], k: 'g' };
+  }
+  return null;
+}
+// for moving a whole shape: best offset that snaps any of its points
+function snapMove(pts, T) {
+  let best = null, bd = Infinity;
+  pts.forEach(p => { const s = snapPt(p, T, true); if (s) { const d = Math.hypot(s.p[0] - p[0], s.p[1] - p[1]); if (d < bd) { bd = d; best = { d: [s.p[0] - p[0], s.p[1] - p[1]], p: s.p, k: s.k }; } } });
+  if (!best && grid.snapGrid && pts.length) {
+    const gx = grid.size / out.w, gy = grid.size / out.h, p = pts[0];
+    best = { d: [Math.round(p[0] / gx) * gx - p[0], Math.round(p[1] / gy) * gy - p[1]], p: null, k: 'g' };
+    best.p = [p[0] + best.d[0], p[1] + best.d[1]];
+  }
+  return best;
+}
 function norm(e) { const r = rect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
 svg.addEventListener('pointerdown', e => {
   const t = e.target.dataset?.t; if (!t) return;
@@ -861,26 +1048,35 @@ svg.addEventListener('pointerdown', e => {
   if (t === 'corner') selCorner = i;
   if (t === 'mesh') selMesh = i;
   if (t === 'mpt') selMaskPt = i;
-  drag = { t, i, start: norm(e), origC: s && s.c.map(p => [...p]), origOff: s && s.mesh.off.map(p => [...p]), origPts: m && m.pts.map(p => [...p]) };
+  drag = { t, i, start: norm(e), origC: s && s.c.map(p => [...p]), origOff: s && s.mesh.off.map(p => [...p]), origPts: m && m.pts.map(p => [...p]),
+    T: buildSnapTargets(s ? s.id : null, m ? m.id : null), origSV: s && snapVerts(s) };
   try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
   drawOverlay();
 });
 addEventListener('pointermove', e => {
   if (!drag) return;
-  const [x, y] = norm(e), dx = x - drag.start[0], dy = y - drag.start[1], s = S(), m = M();
-  if (drag.t === 'corner' && s) s.c[drag.i] = [drag.origC[drag.i][0] + dx, drag.origC[drag.i][1] + dy];
-  else if (drag.t === 'move' && s) s.c = drag.origC.map(([a, b]) => [a + dx, b + dy]);
-  else if (drag.t === 'mesh' && s) s.mesh.off[drag.i] = [drag.origOff[drag.i][0] + dx, drag.origOff[drag.i][1] + dy];
-  else if (drag.t === 'mpt' && m) { m.pts[drag.i] = [drag.origPts[drag.i][0] + dx, drag.origPts[drag.i][1] + dy]; masksDirty = true; }
-  else if (drag.t === 'mmove' && m) { m.pts = drag.origPts.map(([a, b]) => [a + dx, b + dy]); masksDirty = true; }
+  const [x, y] = norm(e), s = S(), m = M(), noSnap = e.altKey;
+  let dx = x - drag.start[0], dy = y - drag.start[1];
+  snapMark = null;
+  const sp = p => { if (noSnap) return p; const r = snapPt(p, drag.T); if (r) { snapMark = r; return r.p; } return p; };
+  const mv = pts => { if (noSnap) return; const r = snapMove(pts.map(([a, b]) => [a + dx, b + dy]), drag.T); if (r) { dx += r.d[0]; dy += r.d[1]; snapMark = { p: r.p, k: r.k }; } };
+  if (drag.t === 'corner' && s) s.c[drag.i] = sp([drag.origC[drag.i][0] + dx, drag.origC[drag.i][1] + dy]);
+  else if (drag.t === 'move' && s) { mv(drag.origSV); s.c = drag.origC.map(([a, b]) => [a + dx, b + dy]); }
+  else if (drag.t === 'mesh' && s) {
+    const { cols } = s.mesh, i = drag.i % (cols + 1), j = Math.floor(drag.i / (cols + 1)), base = homog(s.c)(i / cols, j / s.mesh.rows);
+    const o0 = drag.origOff[drag.i], q = sp([base[0] + o0[0] + dx, base[1] + o0[1] + dy]);
+    s.mesh.off[drag.i] = [q[0] - base[0], q[1] - base[1]];
+  }
+  else if (drag.t === 'mpt' && m) { m.pts[drag.i] = sp([drag.origPts[drag.i][0] + dx, drag.origPts[drag.i][1] + dy]); masksDirty = true; }
+  else if (drag.t === 'mmove' && m) { mv(drag.origPts); m.pts = drag.origPts.map(([a, b]) => [a + dx, b + dy]); masksDirty = true; }
   drawOverlay();
 });
-addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointerup', () => { if (drag) { drag = null; snapMark = null; drawOverlay(); } });
 $('stage').addEventListener('pointerdown', e => {
   if (viewMode !== 'edit') return;
   const [x, y] = norm(e);
   for (let i = masks.length - 1; i >= 0; i--) if (masks[i].type === 'cut' && inPoly(x, y, masks[i].pts)) { select('mask', masks[i].id); return; }
-  for (let i = surfaces.length - 1; i >= 0; i--) if (surfaces[i].visible && inPoly(x, y, boundary(surfaces[i], 12))) { select('surface', surfaces[i].id); return; }
+  for (let i = surfaces.length - 1; i >= 0; i--) if (surfaces[i].visible && inPoly(x, y, outline(surfaces[i], 2))) { select('surface', surfaces[i].id); return; }
 });
 function select(kind, id) { sel = { kind, id }; if (kind === 'mask') selMaskPt = 0; renderAll(); }
 
@@ -920,7 +1116,7 @@ function syncSurf() {
   ['fL', 'fR', 'fT', 'fB'].forEach((id, i) => $(id).value = s.feather[i]);
   $('fG').value = s.gamma; $('fGv').textContent = (+s.gamma).toFixed(1);
   $('cX0').value = s.crop[0]; $('cY0').value = s.crop[1]; $('cX1').value = s.crop[2]; $('cY1').value = s.crop[3];
-  syncDims();
+  syncDims(); syncShapes();
 }
 const onS = (id, ev, fn) => bind(id, ev, e => { const s = S(); if (s) { fn(s, e.target); drawOverlay(); } });
 onS('pName', 'input', (s, t) => { s.name = t.value; renderSurfList(); });
@@ -981,6 +1177,59 @@ bind('splitPair', 'click', () => {
   surfaces.splice(surfaces.indexOf(s) + 1, 0, Rr);
   toast('Split into A + B with a 10% blended overlap'); renderAll();
 });
+
+// ---- shapes ----
+function shapeIcon(k) {
+  const pts = shapePts(k), na = SHAPE_NAT[k] || 1, W = 30, H = 22, bw = Math.min(W, H * na), bh = bw / na, ox = (W - bw) / 2, oy = (H - bh) / 2;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polygon points="${pts.map(([u, v]) => (ox + u * bw).toFixed(1) + ',' + (oy + v * bh).toFixed(1)).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+(() => {
+  const g = $('shapeGrid');
+  SHAPES.forEach(([k, label]) => {
+    const b = document.createElement('button'); b.dataset.shape = k; b.title = label; b.setAttribute('aria-label', label);
+    b.style.cssText = 'padding:4px 0;display:flex;align-items:center;justify-content:center;height:34px';
+    b.innerHTML = shapeIcon(k); b.onclick = () => pickShape(k); g.appendChild(b);
+  });
+})();
+function boxFor(cx, cy, hpx, nat) {
+  const h = hpx / out.h, w = hpx * nat / out.w;
+  return [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]];
+}
+function pickShape(k) {
+  const label = SHAPES.find(x => x[0] === k)[1];
+  if ($('shNew').checked || !S()) {
+    const n = makeSurface(); n.shape = k; n.name = label + ' ' + (surfaces.filter(o => o.shape === k).length + 1);
+    const i = surfaces.length % 8, cx = .2 + (i % 4) * .2, cy = i < 4 ? .3 : .7;
+    n.c = boxFor(cx, cy, out.h * .3, SHAPE_NAT[k] || 1);
+    surfaces.push(n); select('surface', n.id); return;
+  }
+  const s = S(); s.shape = k; syncShapes(); drawOverlay();
+}
+function syncShapes() {
+  const s = S();
+  document.querySelectorAll('#shapeGrid button').forEach(b => b.classList.toggle('on', !!s && (s.shape || 'rect') === b.dataset.shape));
+  if (s) $('shSoft').value = s.soft || 0;
+}
+bind('shSoft', 'input', e => { const s = S(); if (s) s.soft = +e.target.value; });
+bind('shNat', 'click', () => {
+  const s = S(); if (!s) return;
+  const P = (u, v) => { const p = mapper(s)(u, v); return [p[0] * out.w, p[1] * out.h]; };
+  const c = mapper(s)(.5, .5), hpx = (Math.hypot(...[0, 1].map(i => P(0, 0)[i] - P(0, 1)[i])) + Math.hypot(...[0, 1].map(i => P(1, 0)[i] - P(1, 1)[i]))) / 2;
+  s.c = boxFor(c[0], c[1], hpx, hasDims(s) && s.shape === 'rect' ? s.dims.w / s.dims.h : (SHAPE_NAT[s.shape] || 1));
+  s.mesh = defMesh(s.mesh.cols); drawOverlay();
+});
+
+// ---- grid & snap ----
+function syncGrid() {
+  $('gShow').checked = grid.show; $('gSize').value = grid.size; $('snGrid').checked = grid.snapGrid;
+  $('snSurf').checked = grid.snapSurf; $('snFrame').checked = grid.snapFrame; $('gOut').checked = grid.out;
+}
+bind('gShow', 'change', e => { grid.show = e.target.checked; drawOverlay(); });
+bind('gSize', 'change', e => { grid.size = +e.target.value; drawOverlay(); });
+bind('snGrid', 'change', e => { grid.snapGrid = e.target.checked; if (grid.snapGrid && !grid.show) { grid.show = true; syncGrid(); drawOverlay(); } });
+bind('snSurf', 'change', e => { grid.snapSurf = e.target.checked; });
+bind('snFrame', 'change', e => { grid.snapFrame = e.target.checked; });
+bind('gOut', 'change', e => { grid.out = e.target.checked; masksDirty = true; });
 
 // ---- dimensions & canvas size ----
 const hasDims = s => s.dims && s.dims.w > 0 && s.dims.h > 0;
@@ -1235,7 +1484,7 @@ function toast(msg, ms = 1800) { const t = $('toast'); t.textContent = msg; t.st
 
 // ---- save / load ----
 const KEY = 'projmapper.layout.v2';
-const serialize = () => JSON.stringify({ v: 2, surfaces, masks, cues, out: { preset: out.preset }, preview, master: +$('gMaster').value, unit, canvasMode });
+const serialize = () => JSON.stringify({ v: 2, surfaces, masks, cues, out: { preset: out.preset }, preview, master: +$('gMaster').value, unit, canvasMode, grid });
 function restore(txt) {
   const d = JSON.parse(txt); if (!d || !Array.isArray(d.surfaces)) throw new Error('bad');
   [...rt.keys()].forEach(dropRT);
@@ -1245,6 +1494,7 @@ function restore(txt) {
   if (d.master != null) $('gMaster').value = d.master;
   if (d.unit && UNIT_CM[d.unit]) unit = d.unit;
   if (d.canvasMode) canvasMode = d.canvasMode;
+  if (d.grid) { grid = { ...grid, ...d.grid }; syncGrid(); }
   nextId = Math.max(0, ...surfaces.map(s => s.id), ...masks.map(m => m.id)) + 1;
   if (d.out?.preset) { $('oRes').value = d.out.preset; applyRes(d.out.preset); }
   masksDirty = true; sel = { kind: 'surface', id: surfaces[0]?.id ?? null }; syncPreview(); renderAll();
@@ -1268,6 +1518,7 @@ addEventListener('keydown', e => {
   if (k === 's' || k === 'S') return save();
   if (k === 'n' || k === 'N') return addSurface();
   if (k === ' ') { e.preventDefault(); return goNext(); }
+  if (k === 'g' || k === 'G') { grid.show = !grid.show; syncGrid(); return drawOverlay(); }
   if (k === 'm' || k === 'M') { warpMode = warpMode === 'mesh' ? 'corner' : 'mesh'; syncSurf(); return drawOverlay(); }
   if ((k === 'Delete' || k === 'Backspace')) { if (m) $('mDel').click(); else delSurface(); return; }
   if (k === 'Tab' && surfaces.length) {
@@ -1300,7 +1551,7 @@ if (!restored) {
   const b = makeSurface(1); b.name = 'Box face'; b.src = 'edges'; b.c = [[.64, .3], [.88, .36], [.86, .74], [.66, .7]]; surfaces.push(b);
   sel = { kind: 'surface', id: a.id };
 }
-syncPreview(); setMode('edit'); renderAll(); fitCanvas();
+syncPreview(); syncGrid(); setMode('edit'); renderAll(); fitCanvas();
 requestAnimationFrame(frame);
 })();
 </script>
