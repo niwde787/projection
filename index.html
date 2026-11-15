@@ -72,7 +72,7 @@
 
 <div id="panel">
   <div class="head">
-    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.3 · WebGL · mesh warp · masks · blend · cues</div></div>
+    <div><h1>PROJECTION MAPPER</h1><div class="sub">v0.4 · mesh warp · masks · blend · cues · dimensions</div></div>
     <button id="collapse" title="Collapse panel">–</button>
   </div>
 
@@ -123,6 +123,22 @@
       <button id="vis">Hide</button><button id="up">Raise</button><button id="down">Lower</button>
       <button id="flipH">Flip H</button><button id="flipV">Flip V</button><button id="rot">Rotate</button>
     </div>
+  </details>
+
+  <details open id="dimSec">
+    <summary>Dimensions &amp; canvas size</summary>
+    <div class="row"><label>Units</label>
+      <select id="dUnit"><option value="in">inches</option><option value="ft">feet</option><option value="cm">centimeters</option><option value="m">meters</option></select>
+    </div>
+    <div class="row"><label>W × H</label><input type="number" id="dW" min="0" step="0.5" placeholder="width" style="width:72px"><span style="color:var(--dim)">×</span><input type="number" id="dH" min="0" step="0.5" placeholder="height" style="width:72px"><span class="tiny dU" style="margin:0"></span></div>
+    <div id="dInfo" class="tiny" style="line-height:1.6"></div>
+    <div class="row"><label>Canvas</label>
+      <select id="dMode"><option value="native">Match projector pixels</option><option value="hd">1920 px long side</option><option value="4k">3840 px long side</option></select>
+    </div>
+    <div class="row"><button id="dEst">Estimate the rest from this one</button></div>
+    <div class="row"><button id="dTpl">⬇ Template PNG</button><button id="dTplAll">⬇ All templates</button><button id="dCopy">Copy size list</button></div>
+    <pre id="dList" style="margin:4px 0 6px;padding:6px 8px;background:var(--ui2);border:1px solid var(--line);border-radius:6px;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;color:var(--txt)"></pre>
+    <div class="tiny">Measure the surface roughly (a tape measure, or count tiles and boards) and enter width × height. The app gives the real aspect ratio and a canvas size to design your content at, so it fits the surface without stretching. Measure just one surface and <b>Estimate the rest</b> scales the others from where they sit in the projection (rough, because perspective skews it; ≈ marks an estimate). <b>Template PNG</b> saves a blank guide image at the canvas size with a real-world grid, ready to design on.</div>
   </details>
 
   <details open id="warpSec">
@@ -259,6 +275,9 @@ let out = { w: 1920, h: 1080, preset: '1920x1080' };
 let preview = { amb: .22, gain: 1.15, black: .025, hot: .35, bloom: .55, cmp: false, split: .5 };
 let ref = { data: null, opacity: .8, fit: 'contain', look: 'normal', sim: false };
 let nextId = 1;
+let unit = 'in', canvasMode = 'native';
+const UNIT_CM = { in: 2.54, ft: 30.48, cm: 1, m: 100 };
+const UNIT_LBL = { in: 'in', ft: 'ft', cm: 'cm', m: 'm' };
 const rt = new Map();             // per-surface runtime (textures, media)
 let masksDirty = true;
 
@@ -271,6 +290,7 @@ function makeSurface(i = surfaces.length) {
     visible: true, rot: 0, flipH: false, flipV: false, audio: 0, band: 'level',
     c: [[.32 + ox, .25 + oy], [.62 + ox, .25 + oy], [.62 + ox, .68 + oy], [.32 + ox, .68 + oy]],
     mesh: defMesh(3), feather: [0, 0, 0, 0], gamma: 2.2, crop: [0, 0, 1, 1],
+    dims: { w: 0, h: 0 }, dimsEst: false,
   };
 }
 const S = () => sel.kind === 'surface' ? surfaces.find(s => s.id === sel.id) : null;
@@ -503,12 +523,15 @@ function lerpHex(a, b, k) { const A = hexRgb(a), B = hexRgb(b); return rgbHex(A.
 function drawGrid(s, ctx, w, h) {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = s.color; ctx.lineWidth = 1; ctx.globalAlpha = .55;
-  for (let i = 0; i <= 16; i++) { const x = i / 16 * w, y = i / 16 * h; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  const m = Math.min(w, h), cell = m / 8;
+  for (let x = w / 2 % cell; x <= w; x += cell) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = h / 2 % cell; y <= h; y += cell) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
   ctx.globalAlpha = 1; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, w - 3, h - 3);
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, h); ctx.moveTo(w, 0); ctx.lineTo(0, h); ctx.stroke();
-  ctx.beginPath(); ctx.arc(w / 2, h / 2, w * .3, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(w / 2, h / 2, w * .1, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(w / 2, h / 2, m * .36, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(w / 2, h / 2, m * .12, 0, 7); ctx.stroke();
   ctx.fillStyle = s.color; ctx.font = 'bold 30px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(s.name, w / 2, h * .62 + 20);
+  ctx.fillText(s.name, w / 2, h / 2 + m * .22);
+  if (hasDims(s)) { ctx.font = 'bold 20px ui-monospace,monospace'; ctx.fillText(dimStr(s), w / 2, h / 2 + m * .22 + 30); }
   ctx.font = 'bold 22px ui-monospace,monospace';
   [['1', 22, 22], ['2', w - 22, 22], ['3', w - 22, h - 22], ['4', 22, h - 22]].forEach(([t, x, y]) => ctx.fillText(t, x, y));
   ctx.fillText('▲ TOP', w / 2, 26);
@@ -574,7 +597,9 @@ function updateTexture(s, t) {
   }
   if (s.src === 'link' && byId(s.link)) return;
   r.imgDone = false;
-  drawGen(s, r.ctx, TEX, TEX, t);
+  const [tw, th] = texDims(s);
+  if (r.canvas.width !== tw || r.canvas.height !== th) { r.canvas.width = tw; r.canvas.height = th; }
+  drawGen(s, r.ctx, tw, th, t);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, r.canvas);
 }
 function srcTex(s, depth = 0) {
@@ -790,6 +815,12 @@ function drawOverlay() {
     if (!isSel && mode !== 'all') return;
     const col = s.color, b = boundary(s, 16).map(P);
     o += `<polygon points="${b.map(p => p.join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="${isSel ? 1.5 : 1}" stroke-dasharray="${isSel ? '' : '4 4'}" opacity="${isSel ? .95 : .6}"/>`;
+    if (hasDims(s)) {
+      const f0 = mapper(s), tp = P(f0(.5, 0)), cc = P(f0(.5, .5));
+      const lx = tp[0] + (cc[0] - tp[0]) * .18, ly = tp[1] + (cc[1] - tp[1]) * .18;
+      const label = dimStr(s);
+      o += `<g style="pointer-events:none"><rect x="${lx - label.length * 3.6 - 6}" y="${ly - 10}" width="${label.length * 7.2 + 12}" height="20" rx="10" fill="rgba(0,0,0,.7)" stroke="${col}" stroke-opacity=".6"/><text x="${lx}" y="${ly + 4}" text-anchor="middle" fill="${col}" font-size="12" font-family="ui-monospace,monospace">${label}</text></g>`;
+    }
     if (!isSel) return;
     { const c = P(mapper(s)(.5, .5));
       o += `<rect class="h" data-t="move" x="${c[0] - 8}" y="${c[1] - 8}" width="16" height="16" transform="rotate(45 ${c[0]} ${c[1]})" fill="rgba(0,0,0,.55)" stroke="${col}" stroke-width="2"/>`; }
@@ -815,6 +846,7 @@ function drawOverlay() {
     }
   });
   svg.innerHTML = o;
+  if (typeof updateDimInfo === 'function' && $('dimSec').open) updateDimInfo();
 }
 
 // =====================================================================
@@ -870,7 +902,7 @@ function renderSurfList() {
 }
 function syncSurf() {
   const s = S();
-  ['sProps', 'warpSec', 'blendSec'].forEach(id => $(id).style.display = s ? '' : 'none');
+  ['sProps', 'dimSec', 'warpSec', 'blendSec'].forEach(id => $(id).style.display = s ? '' : 'none');
   if (!s) return;
   $('pName').value = s.name; $('pSrc').value = s.src;
   $('pColor').value = s.color; $('pColor2').value = s.color2;
@@ -888,6 +920,7 @@ function syncSurf() {
   ['fL', 'fR', 'fT', 'fB'].forEach((id, i) => $(id).value = s.feather[i]);
   $('fG').value = s.gamma; $('fGv').textContent = (+s.gamma).toFixed(1);
   $('cX0').value = s.crop[0]; $('cY0').value = s.crop[1]; $('cX1').value = s.crop[2]; $('cY1').value = s.crop[3];
+  syncDims();
 }
 const onS = (id, ev, fn) => bind(id, ev, e => { const s = S(); if (s) { fn(s, e.target); drawOverlay(); } });
 onS('pName', 'input', (s, t) => { s.name = t.value; renderSurfList(); });
@@ -947,6 +980,121 @@ bind('splitPair', 'click', () => {
   Object.assign(s, L);
   surfaces.splice(surfaces.indexOf(s) + 1, 0, Rr);
   toast('Split into A + B with a 10% blended overlap'); renderAll();
+});
+
+// ---- dimensions & canvas size ----
+const hasDims = s => s.dims && s.dims.w > 0 && s.dims.h > 0;
+const toU = cm => cm / UNIT_CM[unit], fromU = v => v * UNIT_CM[unit];
+function fmtU(cm) { const v = toU(cm); return (v >= 100 ? v.toFixed(0) : v >= 10 ? (Math.round(v * 2) / 2).toString() : v.toFixed(1).replace(/\.0$/, '')); }
+function dimStr(s) { return (s.dimsEst ? '≈' : '') + fmtU(s.dims.w) + ' × ' + fmtU(s.dims.h) + ' ' + UNIT_LBL[unit]; }
+function projPx(s) {
+  const f = mapper(s), P = (u, v) => { const p = f(u, v); return [p[0] * out.w, p[1] * out.h]; };
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const tl = P(0, 0), tr = P(1, 0), br = P(1, 1), bl = P(0, 1);
+  return [(d(tl, tr) + d(bl, br)) / 2, (d(tl, bl) + d(tr, br)) / 2];
+}
+function aspectOf(s) { if (hasDims(s)) return s.dims.w / s.dims.h; const [w, h] = projPx(s); return h > 0 ? w / h : 1; }
+function texDims(s) {
+  const a = clamp(aspectOf(s), .1, 10), L = 640;
+  const w = a >= 1 ? L : Math.round(L * a / 8) * 8, h = a >= 1 ? Math.round(L / a / 8) * 8 : L;
+  return [Math.max(64, w), Math.max(64, h)];
+}
+function canvasSize(s) {
+  const a = clamp(aspectOf(s), .05, 20), [pw, ph] = projPx(s);
+  let long = canvasMode === 'hd' ? 1920 : canvasMode === '4k' ? 3840 : Math.ceil(Math.max(pw, ph) / 16) * 16;
+  long = Math.max(long, 64);
+  const ev = x => Math.max(2, Math.round(x / 2) * 2);
+  return a >= 1 ? [ev(long), ev(long / a)] : [ev(long * a), ev(long)];
+}
+function ratioStr(a) {
+  const common = [[16, 9], [16, 10], [4, 3], [3, 2], [1, 1], [21, 9], [5, 4], [2, 1], [3, 1], [9, 16], [3, 4], [2, 3], [1, 2], [1, 3]];
+  for (const [x, y] of common) if (Math.abs(a - x / y) / (x / y) < .015) return x + ':' + y;
+  return a >= 1 ? a.toFixed(2) + ':1' : '1:' + (1 / a).toFixed(2);
+}
+function updateDimInfo() {
+  const s = S();
+  if (s) {
+    const [pw, ph] = projPx(s), [cw, ch] = canvasSize(s), a = aspectOf(s);
+    let html = `Real size: <b style="color:var(--txt)">${hasDims(s) ? dimStr(s) : 'not set'}</b><br>`;
+    html += `Aspect ratio: <b style="color:var(--txt)">${ratioStr(a)}</b>${hasDims(s) ? '' : ' (from projection shape)'}<br>`;
+    html += `Projector pixels on it: <b style="color:var(--txt)">~${Math.round(pw)} × ${Math.round(ph)}</b><br>`;
+    html += `Make content at: <b style="color:var(--acc)">${cw} × ${ch} px</b>`;
+    if (hasDims(s)) { const ppi = pw / toU(s.dims.w) * (unit === 'ft' ? 1 / 12 : unit === 'cm' ? 2.54 : unit === 'm' ? .0254 : 1); html += `<br>Sharpness on wall: ~${ppi.toFixed(1)} projector px per inch`; }
+    $('dInfo').innerHTML = html;
+  }
+  const lines = surfaces.map(o => { const [cw, ch] = canvasSize(o); return `${o.name.slice(0, 12).padEnd(12)} ${(hasDims(o) ? dimStr(o) : 'size not set').padEnd(14)} ${cw}×${ch}`; });
+  $('dList').textContent = lines.join('\n') || 'No surfaces';
+}
+function syncDims() {
+  const s = S(); $('dUnit').value = unit; $('dMode').value = canvasMode;
+  document.querySelectorAll('.dU').forEach(e => e.textContent = UNIT_LBL[unit]);
+  if (s) {
+    const f = cm => cm > 0 ? +toU(cm).toFixed(unit === 'm' || unit === 'ft' ? 2 : 1) : '';
+    if (document.activeElement !== $('dW')) $('dW').value = f(s.dims.w);
+    if (document.activeElement !== $('dH')) $('dH').value = f(s.dims.h);
+  }
+  updateDimInfo();
+}
+bind('dUnit', 'change', e => { unit = e.target.value; syncDims(); drawOverlay(); });
+bind('dMode', 'change', e => { canvasMode = e.target.value; updateDimInfo(); });
+['dW', 'dH'].forEach((id, i) => bind(id, 'input', e => {
+  const s = S(); if (!s) return;
+  const v = parseFloat(e.target.value); s.dims[i ? 'h' : 'w'] = v > 0 ? fromU(v) : 0; s.dimsEst = false;
+  updateDimInfo(); drawOverlay();
+}));
+bind('dEst', 'click', () => {
+  const s = S(); if (!s || !hasDims(s)) return toast('Enter this surface’s width and height first');
+  const [pw, ph] = projPx(s), k = (s.dims.w / pw + s.dims.h / ph) / 2;
+  let n = 0;
+  surfaces.forEach(o => { if (o === s || (hasDims(o) && !o.dimsEst)) return; const [w, h] = projPx(o); o.dims = { w: w * k, h: h * k }; o.dimsEst = true; n++; });
+  toast(n ? `Estimated ${n} surface${n > 1 ? 's' : ''} (≈ approximate)` : 'All other surfaces already have measured sizes');
+  syncDims(); drawOverlay();
+});
+function makeTemplate(s) {
+  const [w, h] = canvasSize(s), c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), m = Math.min(w, h), col = s.color;
+  x.fillStyle = '#121418'; x.fillRect(0, 0, w, h);
+  // real-world grid (1 ft or 10 cm) if size known, otherwise 10% grid
+  let step;
+  if (hasDims(s)) { const stepCm = unit === 'in' || unit === 'ft' ? 30.48 : 10; step = w / s.dims.w * stepCm; if (step < 12) step *= Math.ceil(12 / step); }
+  else step = m / 10;
+  x.strokeStyle = 'rgba(255,255,255,.12)'; x.lineWidth = Math.max(1, m / 900);
+  for (let gx = step; gx < w; gx += step) { x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, h); x.stroke(); }
+  for (let gy = step; gy < h; gy += step) { x.beginPath(); x.moveTo(0, gy); x.lineTo(w, gy); x.stroke(); }
+  // edge-blend zones
+  const [fl, fr, ft, fb] = s.feather; x.fillStyle = 'rgba(255,201,77,.18)';
+  if (fl) x.fillRect(0, 0, fl * w, h); if (fr) x.fillRect(w - fr * w, 0, fr * w, h); if (ft) x.fillRect(0, 0, w, ft * h); if (fb) x.fillRect(0, h - fb * h, w, fb * h);
+  // safe area 5%
+  x.setLineDash([m / 60, m / 90]); x.strokeStyle = 'rgba(255,255,255,.35)'; x.strokeRect(w * .05, h * .05, w * .9, h * .9); x.setLineDash([]);
+  // center + thirds
+  x.strokeStyle = 'rgba(255,255,255,.25)';
+  [[w / 3, 0, w / 3, h], [2 * w / 3, 0, 2 * w / 3, h], [0, h / 3, w, h / 3], [0, 2 * h / 3, w, 2 * h / 3]].forEach(([a, b, c2, d]) => { x.beginPath(); x.moveTo(a, b); x.lineTo(c2, d); x.stroke(); });
+  x.strokeStyle = col; x.lineWidth = Math.max(2, m / 300);
+  x.beginPath(); x.moveTo(w / 2 - m * .04, h / 2); x.lineTo(w / 2 + m * .04, h / 2); x.moveTo(w / 2, h / 2 - m * .04); x.lineTo(w / 2, h / 2 + m * .04); x.stroke();
+  x.lineWidth = Math.max(3, m / 150); x.strokeRect(x.lineWidth / 2, x.lineWidth / 2, w - x.lineWidth, h - x.lineWidth);
+  // labels
+  x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = `bold ${Math.round(m * .07)}px system-ui,sans-serif`; x.fillText(s.name, w / 2, h / 2 - m * .12);
+  x.fillStyle = 'rgba(255,255,255,.8)'; x.font = `${Math.round(m * .04)}px ui-monospace,monospace`;
+  x.fillText(`${w} × ${h} px · ${ratioStr(w / h)}`, w / 2, h / 2 + m * .1);
+  if (hasDims(s)) x.fillText(`${dimStr(s)} · grid = ${unit === 'in' || unit === 'ft' ? '1 ft' : '10 cm'}`, w / 2, h / 2 + m * .16);
+  x.font = `${Math.round(m * .03)}px ui-monospace,monospace`; x.fillStyle = 'rgba(255,255,255,.45)';
+  x.fillText('▲ TOP', w / 2, m * .035 + h * .05);
+  return c;
+}
+const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+function downloadTemplate(s) {
+  const c = makeTemplate(s), [w, h] = [c.width, c.height];
+  const a = document.createElement('a');
+  a.download = `${s.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'surface'}_${w}x${h}.png`;
+  a.href = c.toDataURL('image/png'); document.body.appendChild(a); a.click(); a.remove();
+}
+bind('dTpl', 'click', () => { const s = S(); if (!s) return; downloadTemplate(s); toast(inFrame ? 'If nothing downloaded, open the GitHub Pages link — downloads are blocked inside the Claude app' : 'Template saved', inFrame ? 4000 : 1800); });
+bind('dTplAll', 'click', () => { surfaces.forEach((s, i) => setTimeout(() => downloadTemplate(s), i * 400)); toast(inFrame ? 'If nothing downloaded, open the GitHub Pages link — downloads are blocked inside the Claude app' : `Saving ${surfaces.length} templates`, 4000); });
+bind('dCopy', 'click', () => {
+  const t = 'Surface      Real size      Canvas (px)\n' + $('dList').textContent;
+  try { navigator.clipboard.writeText(t).then(() => toast('Size list copied'), () => { $('json').value = t; toast('Copy blocked — list placed in Save / load box'); }); }
+  catch (e) { $('json').value = t; toast('List placed in Save / load box'); }
 });
 
 // ---- masks ----
@@ -1087,7 +1235,7 @@ function toast(msg, ms = 1800) { const t = $('toast'); t.textContent = msg; t.st
 
 // ---- save / load ----
 const KEY = 'projmapper.layout.v2';
-const serialize = () => JSON.stringify({ v: 2, surfaces, masks, cues, out: { preset: out.preset }, preview, master: +$('gMaster').value });
+const serialize = () => JSON.stringify({ v: 2, surfaces, masks, cues, out: { preset: out.preset }, preview, master: +$('gMaster').value, unit, canvasMode });
 function restore(txt) {
   const d = JSON.parse(txt); if (!d || !Array.isArray(d.surfaces)) throw new Error('bad');
   [...rt.keys()].forEach(dropRT);
@@ -1095,6 +1243,8 @@ function restore(txt) {
   masks = d.masks || []; cues = d.cues || []; cueIdx = -1; trans = null;
   if (d.preview) preview = { ...preview, ...d.preview };
   if (d.master != null) $('gMaster').value = d.master;
+  if (d.unit && UNIT_CM[d.unit]) unit = d.unit;
+  if (d.canvasMode) canvasMode = d.canvasMode;
   nextId = Math.max(0, ...surfaces.map(s => s.id), ...masks.map(m => m.id)) + 1;
   if (d.out?.preset) { $('oRes').value = d.out.preset; applyRes(d.out.preset); }
   masksDirty = true; sel = { kind: 'surface', id: surfaces[0]?.id ?? null }; syncPreview(); renderAll();

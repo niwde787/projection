@@ -10,6 +10,7 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 - **Masks**: cut-outs or show-only-inside shapes, with feathering
 - **Edge blending & crop**: soft edges, gamma, and a one-click 2-projector split
 - **Sources**: test grid, solid, gradient, scan bars, pulse, edge chase, rings, audio spectrum, your own image/video, or a copy of another surface
+- **Dimensions & canvas size**: enter a surface's real width × height to get its aspect ratio, projector pixels and the canvas size to design content at; estimate the other surfaces from one measurement; export blank template PNGs with a real-world grid
 - **Reference photo**: plan the layout on a photo of your space
 - **Preview mode**: simulates how the projection will look in a dark room
 - **Audio reactive**: surfaces pulse to bass / mid / high from an audio file
