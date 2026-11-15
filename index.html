@@ -307,11 +307,31 @@
     <div class="row"><button id="allGrid">All → test grid</button></div>
   </details>
 
+  <details open id="projCur">
+    <summary>Current project</summary>
+    <div class="row"><input type="text" id="pjName" style="flex:1;min-width:0;font-weight:600" maxlength="60" aria-label="Project name"></div>
+    <div class="tiny" id="pjStatus" style="margin:-2px 0 8px"></div>
+    <div class="row"><button class="pri" id="pjSave">Save (S)</button><button id="pjSaveAs">Save as copy</button><button id="pjNew">+ New project</button></div>
+    <div class="row"><span class="chk"><input type="checkbox" id="pjAuto" checked> Autosave changes</span></div>
+    <div id="pjConfirm" style="display:none;background:var(--ui2);border:1px solid var(--amb);border-radius:8px;padding:8px 10px;margin:6px 0">
+      <div id="pjConfirmMsg" style="margin-bottom:8px"></div>
+      <div class="row" style="margin:0"><button class="pri" id="pjCSave">Save</button><button id="pjCDiscard" class="danger">Don't save</button><button id="pjCCancel">Cancel</button></div>
+    </div>
+  </details>
+
+  <details open id="projList">
+    <summary>Saved projects</summary>
+    <div class="list" id="pjList"></div>
+    <div class="row"><button id="pjExport">⬇ Export project file</button><button id="pjImport">⬆ Import project file</button></div>
+    <input type="file" id="pjFile" accept=".pmap,.json,application/json" style="display:none">
+    <div class="tiny">Projects are saved in this browser on this device, together with their videos, images, music and room photo. To move one to another device or browser, <b>Export project file</b> and import it there. The GitHub link and the Claude app keep separate project lists.</div>
+  </details>
+
   <details id="saveSec">
-    <summary>Save / load</summary>
-    <div class="row"><button id="save">Save (S)</button><button id="load">Load</button><button id="exp">Export JSON</button><button id="imp">Import JSON</button></div>
+    <summary>Layout JSON (advanced)</summary>
+    <div class="row"><button id="exp">Export JSON</button><button id="imp">Import JSON</button></div>
     <textarea id="json" placeholder="Exported layout appears here — or paste one and press Import JSON"></textarea>
-    <div class="tiny">Saves stay in this browser. Video, image and audio files aren't stored, so pick them again after loading.</div>
+    <div class="tiny">Just the layout as text, without media files. Handy for copying between devices by pasting.</div>
   </details>
 </div>
 
@@ -323,7 +343,7 @@
   <kbd>G</kbd> grid · hold <kbd>Alt</kbd> while dragging = no snap<br>
   <kbd>[</kbd> <kbd>]</kbd> rotate 1° (<kbd>Shift</kbd> 15°) · drag ↻ handle to rotate<br>
   Pinch / wheel / <kbd>+</kbd> <kbd>−</kbd> zoom · drag empty space to pan · <kbd>0</kbd> fit<br>
-  <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
+  <kbd>S</kbd> save project · <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
 </div></details>
 <div id="toast"></div>
 <audio id="audio" loop></audio>
@@ -351,6 +371,7 @@ let out = { w: 1920, h: 1080, preset: '1920x1080' };
 let preview = { amb: .22, gain: 1.15, black: .025, hot: .35, bloom: .55, cmp: false, split: .5 };
 let ref = { data: null, opacity: .8, fit: 'contain', look: 'normal', sim: false };
 let nextId = 1;
+let mediaVer = 0, audioFile = null;
 let unit = 'in', canvasMode = 'native';
 let grid = { show: false, size: 40, snapGrid: false, snapSurf: true, snapFrame: true, out: false };
 let snapMark = null;
@@ -727,7 +748,7 @@ function setMedia(s, file) {
   const r = R(s);
   if (r.mediaURL) URL.revokeObjectURL(r.mediaURL);
   if (r.media && r.isVideo) r.media.pause();
-  const url = URL.createObjectURL(file); r.mediaURL = url; r.mediaName = file.name; r.imgDone = false;
+  const url = URL.createObjectURL(file); r.mediaURL = url; r.mediaName = file.name; r.imgDone = false; r.file = file; mediaVer++;
   if (file.type.startsWith('video')) {
     const v = document.createElement('video'); v.src = url; v.loop = true; v.muted = true; v.playsInline = true; v.autoplay = true;
     v.play().catch(() => {}); r.media = v; r.isVideo = true;
@@ -1003,6 +1024,11 @@ function frame(now) {
     try { outCtx.drawImage(cvs, 0, 0, outCanvas.width, outCanvas.height); } catch (e) {}
   } else if (outWin && outWin.closed) { outWin = null; outCtx = null; outCanvas = null; $('owin').classList.remove('on'); }
   composite(viewMode === 'output' ? 0 : viewMode === 'preview' ? 2 : 1);
+  if (thumbReq) {
+    try { const c = document.createElement('canvas'); c.width = 320; c.height = Math.round(320 * out.h / out.w); c.getContext('2d').drawImage(cvs, 0, 0, c.width, c.height); thumbReq(c.toDataURL('image/jpeg', .72)); }
+    catch (e) { thumbReq(null); }
+    thumbReq = null;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -1619,10 +1645,15 @@ function goNext() { if (!cues.length) return toast('Record a cue first'); goCue(
 bind('aPick', 'click', () => $('aFile').click());
 bind('aFile', 'change', e => {
   const f = e.target.files[0]; if (!f) return;
-  if (audioURL) URL.revokeObjectURL(audioURL);
-  audioURL = URL.createObjectURL(f); audio.src = audioURL; $('aName').textContent = '♪ ' + f.name; e.target.value = '';
+  setAudioFile(f); e.target.value = '';
   playAudio();
 });
+function setAudioFile(f) {
+  if (audioURL) URL.revokeObjectURL(audioURL);
+  audioFile = f; mediaVer++;
+  if (!f) { audio.pause(); audioOn = false; $('aPlay').textContent = '▶ Play'; audio.removeAttribute('src'); audioURL = null; $('aName').textContent = 'No track loaded.'; return; }
+  audioURL = URL.createObjectURL(f); audio.src = audioURL; $('aName').textContent = '♪ ' + (f.name || 'track');
+}
 bind('aPlay', 'click', () => audioOn ? (audio.pause(), audioOn = false, $('aPlay').textContent = '▶ Play') : playAudio());
 function playAudio() {
   if (!audio.src) return $('aFile').click();
@@ -1725,14 +1756,212 @@ function restore(txt) {
   if (d.out?.preset) { $('oRes').value = d.out.preset; applyRes(d.out.preset); }
   masksDirty = true; sel = { kind: 'surface', id: surfaces[0]?.id ?? null }; syncPreview(); renderAll();
 }
-function save() { try { localStorage.setItem(KEY, serialize()); toast('Saved'); } catch (e) { toast('Storage unavailable — use Export'); } }
-bind('save', 'click', save);
-bind('load', 'click', () => { try { const t = localStorage.getItem(KEY) || localStorage.getItem('projmapper.layout.v1'); if (!t) return toast('Nothing saved yet'); restore(t); toast('Loaded'); } catch (e) { toast('Could not load'); } });
+// ---- projects: IndexedDB keeps layouts + media files ----
+let thumbReq = null;
+const idb = (() => {
+  let p = null;
+  const open = () => p || (p = new Promise((res, rej) => {
+    let r; try { r = indexedDB.open('projmapper', 1); } catch (e) { return rej(e); }
+    r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' }); if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs', { keyPath: 'key' }); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked'));
+  }));
+  const run = (store, mode, fn) => open().then(d => new Promise((res, rej) => {
+    const t = d.transaction(store, mode), st = t.objectStore(store); let out; const req = fn(st);
+    if (req) req.onsuccess = () => { out = req.result; };
+    t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('aborted'));
+  }));
+  return {
+    get: (st, k) => run(st, 'readonly', s => s.get(k)),
+    put: (st, v) => run(st, 'readwrite', s => s.put(v)),
+    del: (st, k) => run(st, 'readwrite', s => s.delete(k)),
+    all: st => run(st, 'readonly', s => s.getAll()),
+    range: (st, prefix) => run(st, 'readonly', s => s.getAll(IDBKeyRange.bound(prefix, prefix + '￿'))),
+    delRange: (st, prefix) => run(st, 'readwrite', s => s.delete(IDBKeyRange.bound(prefix, prefix + '￿'))),
+  };
+})();
+let project = { id: null, name: 'Untitled project', created: null, updated: null };
+let lastSaved = null, savedMediaVer = -1, saving = false;
+let autosave = (() => { try { return localStorage.getItem('projmapper.autosave') !== '0'; } catch (e) { return true; } })();
+const refSig = () => JSON.stringify({ ...ref, data: ref.data ? ref.data.length + ref.data.slice(-48) : null });
+const stateKey = () => project.name + '|' + serialize() + '|' + refSig() + '|' + mediaVer;
+const isDirty = () => stateKey() !== lastSaved;
+const newPid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function grabThumb() { return new Promise(res => { thumbReq = res; setTimeout(() => { if (thumbReq === res) { thumbReq = null; res(null); } }, 700); }); }
+function ago(t) {
+  if (!t) return ''; const d = (Date.now() - t) / 1000;
+  if (d < 45) return 'just now'; if (d < 3600) return Math.round(d / 60) + ' min ago'; if (d < 86400) return Math.round(d / 3600) + ' h ago';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d > 300 * 86400 ? 'numeric' : undefined });
+}
+function setStatus() {
+  const el = $('pjStatus'); if (!el) return;
+  if (saving) el.textContent = 'Saving…';
+  else if (!project.id) el.innerHTML = '<span style="color:var(--amb)">Not saved yet</span> · tap Save to keep it';
+  else if (isDirty()) el.innerHTML = autosave ? 'Unsaved changes · autosaving…' : '<span style="color:var(--amb)">Unsaved changes</span>';
+  else el.textContent = 'Saved ' + ago(project.updated);
+  if (document.activeElement !== $('pjName')) $('pjName').value = project.name;
+}
+async function saveProject(asCopy) {
+  if (saving) return;
+  saving = true; setStatus();
+  try {
+    const copying = !!(asCopy && project.id);
+    if (!project.id || asCopy) {
+      project = { ...project, id: newPid(), created: Date.now(), name: copying ? project.name + ' copy' : project.name };
+      savedMediaVer = -1;
+    }
+    project.updated = Date.now();
+    const thumb = await grabThumb();
+    const rec = { id: project.id, name: project.name, created: project.created, updated: project.updated, thumb,
+      data: JSON.parse(serialize()), ref: { ...ref }, nSurfaces: surfaces.length, nCues: cues.length };
+    if (savedMediaVer !== mediaVer) {
+      await idb.delRange('blobs', project.id + ':');
+      for (const s of surfaces) { const r = rt.get(s.id); if (r && r.file) await idb.put('blobs', { key: `${project.id}:surf:${s.id}`, blob: r.file, name: r.mediaName || 'media', type: r.file.type }); }
+      if (audioFile) await idb.put('blobs', { key: `${project.id}:audio`, blob: audioFile, name: audioFile.name || 'audio', type: audioFile.type });
+      savedMediaVer = mediaVer;
+    }
+    await idb.put('projects', rec);
+    lastSaved = stateKey();
+    try { localStorage.setItem('projmapper.current', project.id); } catch (e) {}
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+    if (copying) toast('Saved as “' + project.name + '”');
+    renderProjects();
+  } catch (e) {
+    toast(/quota/i.test(String(e && (e.name || e.message))) ? 'Not enough browser storage. Remove large videos or old projects' : 'Could not save in this browser. Use Export project file instead', 4200);
+  }
+  saving = false; setStatus();
+}
+async function loadRecord(rec, blobs) {
+  restore(JSON.stringify(rec.data));
+  ref = { data: null, opacity: .8, fit: 'contain', look: 'normal', sim: false, ...(rec.ref || {}) };
+  if (ref.data) uploadPhoto(ref.data); applyRef(); saveRef();
+  setAudioFile(null);
+  for (const b of blobs) {
+    const f = new File([b.blob], b.name || 'media', { type: b.type || b.blob.type });
+    if (b.key.endsWith(':audio')) { setAudioFile(f); continue; }
+    const sid = +b.key.split(':surf:')[1], srf = byId(sid);
+    if (srf) { const keep = srf.src; setMedia(srf, f); srf.src = keep; }
+  }
+  renderAll();
+}
+async function openProject(id, quiet) {
+  try {
+    const rec = await idb.get('projects', id); if (!rec) return toast('That project is missing');
+    const blobs = await idb.range('blobs', id + ':');
+    await loadRecord(rec, blobs);
+    project = { id: rec.id, name: rec.name, created: rec.created, updated: rec.updated };
+    savedMediaVer = mediaVer; lastSaved = stateKey();
+    try { localStorage.setItem('projmapper.current', id); } catch (e) {}
+    renderProjects(); setStatus(); resetView();
+    if (!quiet) toast('Opened “' + rec.name + '”');
+  } catch (e) { toast('Could not open that project'); }
+}
+function blankScene() {
+  [...rt.keys()].forEach(dropRT);
+  surfaces = []; masks = []; cues = []; cueIdx = -1; trans = null; masksDirty = true;
+  const a = makeSurface(0); a.name = 'Surface 1'; surfaces.push(a); sel = { kind: 'surface', id: a.id };
+  ref = { data: null, opacity: .8, fit: 'contain', look: 'normal', sim: false }; applyRef(); saveRef();
+  setAudioFile(null); renderAll();
+}
+function newProject() {
+  blankScene();
+  project = { id: null, name: 'Untitled project', created: null, updated: null };
+  savedMediaVer = -1; lastSaved = stateKey();
+  try { localStorage.removeItem('projmapper.current'); } catch (e) {}
+  renderProjects(); setStatus(); resetView(); toast('New project');
+}
+// ask before leaving unsaved work
+let pendingAction = null;
+function guard(fn) {
+  if (!isDirty()) return fn();
+  if (project.id && autosave) return saveProject().then(fn);
+  pendingAction = fn;
+  $('pjConfirmMsg').innerHTML = 'Save changes to <b></b> first?'; $('pjConfirmMsg').querySelector('b').textContent = '“' + project.name + '”';
+  $('pjConfirm').style.display = '';
+}
+const closeConfirm = () => { $('pjConfirm').style.display = 'none'; pendingAction = null; };
+bind('pjCSave', 'click', async () => { const f = pendingAction; closeConfirm(); await saveProject(); f && f(); });
+bind('pjCDiscard', 'click', () => { const f = pendingAction; closeConfirm(); f && f(); });
+bind('pjCCancel', 'click', closeConfirm);
+bind('pjSave', 'click', () => saveProject());
+bind('pjSaveAs', 'click', () => saveProject(true));
+bind('pjNew', 'click', () => guard(newProject));
+bind('pjName', 'input', e => { project.name = e.target.value.trim() || 'Untitled project'; setStatus(); });
+bind('pjName', 'change', () => { if (project.id) saveProject(); });
+bind('pjAuto', 'change', e => { autosave = e.target.checked; try { localStorage.setItem('projmapper.autosave', autosave ? '1' : '0'); } catch (_) {} setStatus(); });
+async function renderProjects() {
+  const L = $('pjList'); if (!L) return;
+  let recs = [];
+  try { recs = await idb.all('projects'); } catch (e) { L.innerHTML = '<div class="tiny">This browser is blocking storage, so projects can’t be saved here. Use Export project file instead.</div>'; return; }
+  recs.sort((a, b) => b.updated - a.updated);
+  L.innerHTML = recs.length ? '' : '<div class="tiny">No saved projects yet. Tap <b>Save</b> to keep this one.</div>';
+  recs.forEach(r => {
+    const d = document.createElement('div'); d.className = 'item' + (r.id === project.id ? ' sel' : ''); d.style.cssText = 'padding:6px;gap:10px;align-items:center';
+    d.innerHTML = `<div style="width:64px;height:36px;border-radius:4px;background:#000 center/cover no-repeat;flex:none;border:1px solid var(--line)"></div>
+      <div style="flex:1;min-width:0"><div class="nm" style="font-weight:600"></div><div class="meta"></div></div>
+      <button class="cp" title="Duplicate" aria-label="Duplicate" style="padding:4px 8px">⧉</button><button class="dl danger" title="Delete" aria-label="Delete" style="padding:4px 8px">✕</button>`;
+    if (r.thumb) d.firstElementChild.style.backgroundImage = `url(${r.thumb})`;
+    d.querySelector('.nm').textContent = r.name;
+    d.querySelector('.meta').textContent = `${r.nSurfaces || 0} surface${r.nSurfaces === 1 ? '' : 's'}${r.nCues ? ' · ' + r.nCues + ' cues' : ''} · ${ago(r.updated)}`;
+    d.onclick = e => { if (e.target.closest('button')) return; if (r.id === project.id) return toast('Already open'); guard(() => openProject(r.id)); };
+    d.querySelector('.cp').onclick = async () => {
+      const id = newPid(), blobs = await idb.range('blobs', r.id + ':');
+      for (const b of blobs) await idb.put('blobs', { ...b, key: id + b.key.slice(r.id.length) });
+      await idb.put('projects', { ...r, id, name: r.name + ' copy', created: Date.now(), updated: Date.now() });
+      renderProjects(); toast('Duplicated');
+    };
+    const del = d.querySelector('.dl');
+    del.onclick = async () => {
+      if (!del.dataset.arm) { del.dataset.arm = 1; del.textContent = 'Delete?'; setTimeout(() => { if (del.isConnected) { delete del.dataset.arm; del.textContent = '✕'; } }, 3000); return; }
+      await idb.delRange('blobs', r.id + ':'); await idb.del('projects', r.id);
+      if (r.id === project.id) { project.id = null; lastSaved = null; try { localStorage.removeItem('projmapper.current'); } catch (_) {} }
+      renderProjects(); setStatus(); toast('Deleted “' + r.name + '”');
+    };
+    L.appendChild(d);
+  });
+}
+// ---- project files (one .pmap file with media embedded) ----
+const blobToDataURL = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(b); });
+function dataURLToBlob(u) { const [h, b64] = u.split(','), type = (h.match(/data:([^;]+)/) || [])[1] || ''; const bin = atob(b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type }); }
+bind('pjExport', 'click', async () => {
+  try {
+    const media = [];
+    for (const s of surfaces) { const r = rt.get(s.id); if (r && r.file) media.push({ key: 'surf:' + s.id, name: r.mediaName, type: r.file.type, data: await blobToDataURL(r.file) }); }
+    if (audioFile) media.push({ key: 'audio', name: audioFile.name, type: audioFile.type, data: await blobToDataURL(audioFile) });
+    const file = { format: 'projmapper-project', version: 1, name: project.name, saved: Date.now(), data: JSON.parse(serialize()), ref: { ...ref }, media };
+    const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (project.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'project') + '.pmap';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const mb = blob.size / 1048576;
+    toast(inFrame ? 'If nothing downloaded, use the GitHub Pages link. Downloads are blocked inside the Claude app' : `Exported ${mb < 1 ? Math.max(1, Math.round(mb * 1024)) + ' KB' : mb.toFixed(1) + ' MB'}`, inFrame ? 4200 : 2200);
+  } catch (e) { toast('Export failed'); }
+});
+bind('pjImport', 'click', () => $('pjFile').click());
+bind('pjFile', 'change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (j.format === 'projmapper-project') {
+      const id = newPid();
+      for (const m of j.media || []) await idb.put('blobs', { key: `${id}:${m.key}`, blob: dataURLToBlob(m.data), name: m.name, type: m.type });
+      await idb.put('projects', { id, name: j.name || 'Imported project', created: Date.now(), updated: Date.now(), thumb: null, data: j.data, ref: j.ref || {}, nSurfaces: (j.data.surfaces || []).length, nCues: (j.data.cues || []).length });
+      guard(() => openProject(id));
+    } else if (Array.isArray(j.surfaces)) {
+      guard(() => { restore(JSON.stringify(j)); project = { id: null, name: f.name.replace(/\.[^.]+$/, ''), created: null, updated: null }; lastSaved = null; setStatus(); renderProjects(); toast('Layout imported. Tap Save to keep it'); });
+    } else throw new Error('format');
+  } catch (err) { toast('That file isn’t a Projection Mapper project'); }
+});
+// autosave + status tick
+setInterval(() => {
+  if (!saving && autosave && project.id && !trans && !drag && isDirty()) saveProject();
+  else setStatus();
+}, 2500);
 bind('exp', 'click', () => { const t = serialize(); $('json').value = t; try { navigator.clipboard.writeText(t).then(() => toast('Copied to clipboard'), () => toast('Exported below')); } catch (e) { toast('Exported below'); } });
 bind('imp', 'click', () => { try { restore($('json').value); toast('Imported'); } catch (e) { toast('Invalid JSON'); } });
 
 // ---- keyboard ----
 addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveProject(e.shiftKey); return; }
   if (e.target.matches('input, select, textarea')) return;
   const k = e.key, s = S(), m = M();
   if (k === 'h' || k === 'H') return setMode(viewMode === 'output' ? 'edit' : 'output');
@@ -1741,7 +1970,7 @@ addEventListener('keydown', e => {
   if (k === 'f' || k === 'F') return toggleFS();
   if (k === 'o' || k === 'O') return openOutputWindow();
   if (k === 'b' || k === 'B') return $('blackout').click();
-  if (k === 's' || k === 'S') return save();
+  if (k === 's' || k === 'S') { e.preventDefault(); return saveProject(); }
   if (k === 'n' || k === 'N') return addSurface();
   if (k === ' ') { e.preventDefault(); return goNext(); }
   if (k === '[' || k === ']' || k === '{' || k === '}') {
@@ -1776,6 +2005,7 @@ addEventListener('resize', fitCanvas);
 // Bottom tab bar
 // =====================================================================
 const ICON = {
+  projects: '<path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-7l-2-2.5H5a2 2 0 0 0-2 2Z"/>',
   layers: '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17.5 9 4.5 9-4.5" opacity=".6"/>',
   content: '<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="9.5" r="1.8"/><path d="m4 17 5.5-5 4 3.5L17 12l4 4"/>',
   shape: '<circle cx="8" cy="8" r="4.5"/><path d="m16.5 10.5 5 9h-10Z"/><rect x="3.5" y="14" width="7" height="7" rx="1"/>',
@@ -1785,6 +2015,7 @@ const ICON = {
   setup: '<path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2" fill="#0b0d11"/><circle cx="15" cy="12" r="2" fill="#0b0d11"/><circle cx="8" cy="18" r="2" fill="#0b0d11"/>',
 };
 const TABS = [
+  ['projects', 'Projects', ['projCur', 'projList']],
   ['layers', 'Layers', ['surfSec', 'maskSec']],
   ['content', 'Content', ['sProps']],
   ['shape', 'Shape', ['shapeSec', 'dimSec']],
@@ -1831,7 +2062,9 @@ setOutput(1920, 1080);
 try { const r = localStorage.getItem(REFKEY); if (r) { ref = { ...ref, ...JSON.parse(r) }; if (ref.data) uploadPhoto(ref.data); } } catch (e) {}
 applyRef();
 let restored = false;
-try { const t = localStorage.getItem(KEY); if (t) { restore(t); restored = true; } } catch (e) {}
+let legacy = null;
+try { legacy = localStorage.getItem(KEY) || localStorage.getItem('projmapper.layout.v1'); } catch (e) {}
+if (legacy) { try { restore(legacy); restored = true; } catch (e) {} }
 if (!restored) {
   const a = makeSurface(0); a.name = 'Wall'; a.c = [[.3, .15], [.56, .1], [.58, .82], [.28, .78]]; surfaces.push(a);
   const b = makeSurface(1); b.name = 'Box face'; b.src = 'edges'; b.c = [[.64, .3], [.88, .36], [.86, .74], [.66, .7]]; surfaces.push(b);
@@ -1840,6 +2073,18 @@ if (!restored) {
 syncPreview(); syncGrid(); setMode('edit'); renderAll();
 openTab(innerWidth > 720 ? 'layers' : null);
 fitCanvas();
+$('pjAuto').checked = autosave;
+lastSaved = stateKey(); setStatus();
+// reopen the last project, or turn an old single save into the first project
+(async () => {
+  let cur = null; try { cur = localStorage.getItem('projmapper.current'); } catch (e) {}
+  try {
+    if (cur && await idb.get('projects', cur)) { await openProject(cur, true); return; }
+    const all = await idb.all('projects');
+    if (legacy && !all.length) { project.name = 'My first project'; await saveProject(); try { localStorage.removeItem(KEY); } catch (e) {} }
+  } catch (e) {}
+  renderProjects(); setStatus();
+})();
 requestAnimationFrame(frame);
 })();
 </script>

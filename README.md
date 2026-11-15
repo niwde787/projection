@@ -20,7 +20,7 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 - **Audio reactive**: surfaces pulse to bass / mid / high from an audio file
 - **Cues**: record looks and crossfade between them with Space
 - **Output window**: clean projector output in a second window
-- Save to browser, export/import layouts as JSON
+- **Projects**: save any number of named projects in the browser (with thumbnails) including their videos, images, music and room photo; autosave; open, duplicate, delete; export/import a single `.pmap` project file to move between devices
 
 ## Keys
 | Key | Action |
@@ -40,6 +40,7 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 | `F` | fullscreen |
 | `B` | blackout |
 | `Space` | GO next cue |
+| `S` / `Ctrl`+`S` | save project (`Ctrl`+`Shift`+`S` = save as copy) |
 
 ## Demo
 [Living room test](media/living-room-mapping-test.mp4)
