@@ -9,7 +9,11 @@ A browser-based projection mapping tool. One HTML file, no install, runs on WebG
 - **Mesh warp** (1×1 to 8×8 grid) for curved or uneven surfaces
 - **Masks**: cut-outs or show-only-inside shapes, with feathering
 - **Edge blending & crop**: soft edges, gamma, and a one-click 2-projector split
+- **Effects library**: 24 one-tap GPU shader looks: plasma, fire, water, aurora, lava lamp, neon outline, glitch, starfield, tunnel, kaleidoscope, smoke, rainbow, sunburst, ripple, waves, checker warp, hex pulse, stained glass, spiral, halftone, sparkles, beat rings, digital rain, scanner sweep
+- **Content layers**: stack up to 3 layers over each surface's base with their own blend mode and opacity
+- **Slicing**: spread one video or effect across several surfaces as one big picture
 - **Sources**: test grid, solid, gradient, scan bars, pulse, edge chase, rings, audio spectrum, your own image/video, or a copy of another surface
+- **Built-in help**: first-run tour (? button) and a tip on every tab
 - **Shapes**: 20 surface shapes: rectangle, square, rounded rect/square, circle, ellipse, triangle, rounded triangle, diamond, trapezoid, parallelogram, pentagon, hexagon, octagon, star, rounded star, 6-point star, hexagram, cross, drop, with adjustable edge softness
 - **Touch-friendly UI**: bottom tab bar (Layers, Content, Shape, Warp, Show, Room, Setup) with pop-up sheets; pinch to zoom and two-finger pan, mouse-wheel/trackpad zoom, zoom bar with Fit
 - **Rotate** surfaces and masks: drag the ↻ handle (snaps to 45°, Shift = 15° steps), type an angle, ±90°, Level, or `[` `]` keys

@@ -24,7 +24,25 @@
   body.panning, body.panning * { cursor:grabbing !important; }
 
   /* ---- bottom tab bar + sheet ---- */
-  #topbar { position:fixed; top:calc(8px + env(safe-area-inset-top)); left:calc(8px + env(safe-area-inset-left)); z-index:9; }
+  #topbar { position:fixed; top:calc(8px + env(safe-area-inset-top)); left:calc(8px + env(safe-area-inset-left)); z-index:9; display:flex; gap:6px; align-items:center; }
+  .fxTile { padding:0; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:var(--ui2); }
+  .fxTile i { display:block; aspect-ratio:16/9; background:#000 center/cover no-repeat; }
+  .fxTile span { font-size:10.5px; padding:3px 2px 4px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fxTile.on { border-color:var(--acc); } .fxTile.on span { color:var(--acc); }
+  .lyRow { display:flex; gap:6px; align-items:center; padding:5px 7px; border-radius:6px; background:var(--ui2); border:1px solid transparent; cursor:pointer; }
+  .lyRow.sel { border-color:var(--acc); }
+  .lyRow .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lyRow select { flex:0 0 78px; padding:3px 4px; font-size:11.5px; }
+  .lyRow input[type=range] { flex:0 0 64px; min-width:0; }
+  .lyRow button { padding:2px 6px; font-size:12px; }
+  .tip { display:flex; gap:8px; align-items:flex-start; background:rgba(61,224,192,.08); border:1px solid rgba(61,224,192,.35); color:var(--txt); border-radius:8px; padding:8px 10px; margin:0 0 10px; font-size:12px; line-height:1.45; }
+  .tip b { color:var(--acc); }
+  .tip button { margin-left:auto; padding:0 6px; border:0; background:none; color:var(--dim); font-size:14px; }
+  #tour { position:fixed; inset:0; z-index:60; display:none; }
+  #tourHole { position:fixed; border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.62); border:2px solid var(--acc); transition:all .25s; pointer-events:none; }
+  #tourCard { position:fixed; width:min(320px, calc(100vw - 24px)); background:#12151b; border:1px solid var(--acc); border-radius:12px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.6); transition:top .25s, left .25s; }
+  #tourCard h3 { margin:0 0 6px; font-size:15px; }
+  #tourCard p { margin:0 0 12px; color:var(--dim); font-size:13px; line-height:1.5; }
   #modeSeg { background:rgba(15,17,21,.9); border-radius:20px; width:auto; }
   #modeSeg button { padding:6px 13px; font-size:12.5px; }
   #tabbar { position:fixed; left:0; right:0; bottom:0; z-index:11; display:flex; justify-content:center; gap:2px;
@@ -115,9 +133,12 @@
     <button id="mPrev" title="Preview (P)">Preview</button>
     <button id="mOut" title="Output (H)">Output</button>
   </div>
+  <button id="helpTop" title="Tour and help" aria-label="Help" style="border-radius:50%;width:32px;height:32px;padding:0;background:rgba(15,17,21,.9);font-weight:700">?</button>
 </div>
 
 <nav id="tabbar"></nav>
+<div id="tour"><div id="tourHole"></div><div id="tourCard"><h3 id="tourT"></h3><p id="tourP"></p>
+  <div class="row" style="margin:0"><span class="tiny" id="tourN" style="margin:0"></span><span style="flex:1"></span><button id="tourSkip">Skip</button><button id="tourBack">Back</button><button class="pri" id="tourNext">Next</button></div></div></div>
 
 <div id="panel" class="closed">
   <div class="sheetHead"><b id="sheetTitle">Layers</b><button id="collapse" title="Close">✕</button></div>
@@ -126,7 +147,7 @@
   <details open id="dispSec">
     <summary>Display</summary>
     <div class="row"><button id="fs">Fullscreen (F)</button><button id="owin">Output window (O)</button></div>
-    <div class="tiny">Projector setup: drag this window onto the projector and go fullscreen, or open a separate output window so the controls stay on your screen. The <b>Output</b> button at the top (or <kbd>H</kbd>) hides all controls.</div>
+    <div class="tiny">Projector setup: drag this window onto the projector and go fullscreen, or open a separate output window so the controls stay on your screen. The <b>Output</b> button at the top (or <kbd>H</kbd>) hides all controls; press <kbd>H</kbd> or press and hold the screen to come back.</div>
   </details>
 
   <details open id="showTop">
@@ -142,16 +163,28 @@
     </div>
   </details>
 
-  <details open id="sProps">
-    <summary>Selected surface</summary>
-    <div class="row"><label>Name</label><input type="text" id="pName" style="flex:1;min-width:0"></div>
+  <details open id="layerSec">
+    <summary>Content layers</summary>
+    <div class="list" id="lyList"></div>
+    <div class="row"><button id="lyAdd">+ Add layer</button></div>
+    <div class="tiny">Stack up to 3 layers on top of the base, each with its own blend mode and opacity. Tap a layer to choose what it shows. Try a video base with <b>Sparkles</b> or <b>Neon outline</b> on top in Add mode.</div>
+  </details>
+
+  <details open id="srcSec">
+    <summary>Source</summary>
+    <div class="tiny" id="srcFor" style="margin:-2px 0 8px"></div>
     <div class="row"><label>Source</label>
       <select id="pSrc">
+        <optgroup label="Basics">
         <option value="grid">Test grid</option><option value="solid">Solid color</option>
         <option value="gradient">Gradient flow</option><option value="scan">Scan bars</option>
         <option value="pulse">Pulse</option><option value="edges">Edge chase</option>
         <option value="rings">Rings</option><option value="spectrum">Audio spectrum</option>
+        </optgroup>
+        <optgroup label="Effects" id="pSrcFx"></optgroup>
+        <optgroup label="Files &amp; links">
         <option value="media">Image / video file…</option><option value="link">Same as another surface</option>
+        </optgroup>
       </select>
     </div>
     <div class="row" id="mediaRow"><label></label><button id="pPick">Choose file…</button><span class="tiny" id="mediaName" style="margin:0"></span></div>
@@ -159,6 +192,17 @@
     <div class="row" id="linkRow"><label>Copy of</label><select id="pLink"></select></div>
     <div class="row"><label>Colors</label><input type="color" id="pColor"><input type="color" id="pColor2"><span class="tiny" style="margin:0">primary / secondary</span></div>
     <div class="row"><label>Speed</label><input type="range" id="pSpeed" min="0" max="3" step="0.05"></div>
+  </details>
+
+  <details open id="fxSec">
+    <summary>Effects library</summary>
+    <div id="fxGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px"></div>
+    <div class="tiny">One tap puts the look on the selected layer, with matching colors. Change the colors and speed above. Effects with a see-through background (Neon outline, Sparkles, Starfield, Scanner sweep) work best as a top layer.</div>
+  </details>
+
+  <details open id="sProps">
+    <summary>Surface settings</summary>
+    <div class="row"><label>Name</label><input type="text" id="pName" style="flex:1;min-width:0"></div>
     <div class="row"><label>Opacity</label><input type="range" id="pOpacity" min="0" max="1" step="0.01"></div>
     <div class="row"><label>Blend</label>
       <select id="pBlend"><option value="normal">Normal</option><option value="add">Add (light)</option><option value="screen">Screen</option><option value="multiply">Multiply</option><option value="lighten">Lighten</option></select>
@@ -170,6 +214,13 @@
       <button id="vis">Hide</button><button id="up">Raise</button><button id="down">Lower</button>
       <button id="flipH">Flip H</button><button id="flipV">Flip V</button><button id="rot" title="Rotate the content inside the surface by 90°">Rotate content</button>
     </div>
+  </details>
+
+  <details open id="sliceSec">
+    <summary>Slice across surfaces</summary>
+    <div class="tiny">Spread this surface's content (a video, an effect, anything) over several surfaces, so it reads as one big picture across all of them. Tick the surfaces to include:</div>
+    <div class="list" id="slList"></div>
+    <div class="row"><button class="pri" id="slApply">Spread across ticked</button><button id="slAll">All surfaces</button><button id="slReset">Undo slicing</button></div>
   </details>
 
   <details open id="shapeSec">
@@ -335,6 +386,9 @@
   </details>
 </div>
 
+<details open id="helpSec"><summary>Help</summary>
+  <div class="row"><button class="pri" id="tourBtn">Take the tour</button><button id="tipsBtn">Show tips again</button></div>
+</details>
 <details open id="keysSec"><summary>Shortcuts</summary><div id="hint">
   <b style="color:var(--txt)">Controls</b><br>
   Drag handles · drag center ◆ to move · click a surface to select<br>
@@ -343,7 +397,7 @@
   <kbd>G</kbd> grid · hold <kbd>Alt</kbd> while dragging = no snap<br>
   <kbd>[</kbd> <kbd>]</kbd> rotate 1° (<kbd>Shift</kbd> 15°) · drag ↻ handle to rotate<br>
   Pinch / wheel / <kbd>+</kbd> <kbd>−</kbd> zoom · drag empty space to pan · <kbd>0</kbd> fit<br>
-  <kbd>S</kbd> save project · <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
+  <kbd>S</kbd> save project · <kbd>?</kbd> button = tour · <kbd>P</kbd> preview · <kbd>H</kbd> output · <kbd>O</kbd> output window · <kbd>F</kbd> fullscreen · <kbd>B</kbd> blackout
 </div></details>
 <div id="toast"></div>
 <audio id="audio" loop></audio>
@@ -389,7 +443,7 @@ function makeSurface(i = surfaces.length) {
     visible: true, rot: 0, flipH: false, flipV: false, audio: 0, band: 'level',
     c: [[.32 + ox, .25 + oy], [.62 + ox, .25 + oy], [.62 + ox, .68 + oy], [.32 + ox, .68 + oy]],
     mesh: defMesh(3), feather: [0, 0, 0, 0], gamma: 2.2, crop: [0, 0, 1, 1],
-    dims: { w: 0, h: 0 }, dimsEst: false, shape: 'rect', soft: 0,
+    dims: { w: 0, h: 0 }, dimsEst: false, shape: 'rect', soft: 0, extra: [],
   };
 }
 const S = () => sel.kind === 'surface' ? surfaces.find(s => s.id === sel.id) : null;
@@ -743,7 +797,7 @@ function R(s) {
   }
   return r;
 }
-function dropRT(id) { const r = rt.get(id); if (!r) return; if (r.mediaURL) URL.revokeObjectURL(r.mediaURL); if (r.media && r.isVideo) r.media.pause(); gl.deleteTexture(r.tex); rt.delete(id); }
+function dropRT(id) { if (typeof dropLR === 'function') dropLR(id + ':'); const r = rt.get(id); if (!r) return; if (r.mediaURL) URL.revokeObjectURL(r.mediaURL); if (r.media && r.isVideo) r.media.pause(); gl.deleteTexture(r.tex); rt.delete(id); }
 function setMedia(s, file) {
   const r = R(s);
   if (r.mediaURL) URL.revokeObjectURL(r.mediaURL);
@@ -847,6 +901,213 @@ function srcTex(s, depth = 0) {
   return R(s).tex;
 }
 
+const BLENDS = {
+  normal: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); },
+  add: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE); },
+  screen: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR); },
+  multiply: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); },
+  lighten: () => { gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE); },
+};
+// =====================================================================
+// GPU effects library (one shader per look, rendered into a texture)
+// =====================================================================
+const FX = [
+  ['plasma', 'Plasma', '#ff3d9a', '#3d7bff', `float v=sin(p.x*4.+T)+sin(p.y*5.-T*1.3)+sin((p.x+p.y)*3.+T*.7)+sin(length(p*6.)-T*1.6);
+    vec3 c=mix(u_c1,u_c2,.5+.5*sin(v*1.2))+hsv(v*.1+T*.05,.6,.3); return vec4(c,1.);`],
+  ['fire', 'Fire', '#ff6a00', '#000000', `vec2 q=vec2(uv.x*asp*2.,uv.y*1.6);
+    float n=fbm(q*2.+vec2(0.,-T*2.4))*.9+fbm(q*4.+vec2(0.,-T*3.5))*.4;
+    float f=clamp(n*1.3-uv.y*1.05+.12*u_au.y,0.,1.); f=pow(f,1.5);
+    vec3 c=mix(vec3(0.),u_c1*vec3(1.,.35,.2)+vec3(.35,0.,0.),smoothstep(0.,.35,f));
+    c=mix(c,vec3(1.,.6,.08),smoothstep(.3,.65,f)); c=mix(c,vec3(1.,.96,.75),smoothstep(.65,1.,f)); return vec4(c,1.);`],
+  ['water', 'Water', '#7fe9ff', '#0a2a6a', `vec2 q=mod(vec2(uv.x*asp,uv.y)*6.2831*1.3,6.2831)-250.; vec2 i2=q; float c=1.;
+    for(int n=0;n<4;n++){ float tt=T*.5*(1.-3.5/float(n+1)); i2=q+vec2(cos(tt-i2.x)+sin(tt+i2.y),sin(tt-i2.y)+cos(tt+i2.x));
+      c+=1./length(vec2(q.x/(sin(i2.x+tt)/.005),q.y/(cos(i2.y+tt)/.005))); }
+    c/=4.; c=1.17-pow(c,1.4); float w=clamp(pow(abs(c),8.),0.,1.);
+    return vec4(mix(u_c2,u_c1,w),1.);`],
+  ['aurora', 'Aurora', '#3dffa0', '#b04dff', `float b=0.;
+    for(int i=0;i<3;i++){ float fi=float(i); float w=fbm(vec2(uv.x*2.+fi*3.,T*.15+fi))*.6;
+      float d=abs(uv.y-.3-fi*.13-w*.5+.15); b+=smoothstep(.2,0.,d)*(.45+.55*noise(vec2(uv.x*9.+T*.6,fi))); }
+    vec3 c=mix(u_c1,u_c2,clamp(uv.y*1.2+.2*sin(uv.x*3.+T*.3),0.,1.))*b+vec3(0.,.01,.04); return vec4(c,1.);`],
+  ['lava', 'Lava lamp', '#ff7a1a', '#2a0033', `float s=0.;
+    for(int i=0;i<7;i++){ float fi=float(i); vec2 c=vec2(sin(T*.35*(1.+fi*.13)+fi*1.7)*.42*asp,sin(T*.27*(1.+fi*.17)+fi*2.3)*.42);
+      vec2 d=p-c; s+=.03/(dot(d,d)+.0005); }
+    float m=smoothstep(.9,1.05,s); vec3 col=mix(u_c2,u_c1,m)+u_c1*.3*smoothstep(.45,1.,s)*(1.-m); return vec4(col,1.);`],
+  ['neon', 'Neon outline', '#3de0c0', '#ff3dd1', `vec2 e=min(uv,1.-uv); float d=min(e.x*asp,e.y);
+    float line=exp(-d*70.)+.35*exp(-d*14.); float chase=.5+.5*sin(atan(p.y,p.x)*3.-T*4.);
+    vec3 c=mix(u_c1,u_c2,chase)*1.2; return vec4(c,clamp(line*(.55+.45*chase)*(1.+u_au.y),0.,1.));`],
+  ['glitch', 'Glitch', '#ff2e63', '#08d9d6', `float bt=floor(T*6.); vec2 cell=floor(uv*vec2(8.,24.)); vec2 q=uv;
+    if(h21(cell+bt)>.82) q.x+=(h21(cell.yy+bt)-.5)*.3;
+    float sh=.012*(1.+step(.9,h21(vec2(bt,1.)))*4.);
+    float bb=step(.5,fract(q.y*5.+T*.5));
+    vec3 c=vec3(mix(u_c2.r,u_c1.r,step(.5,fract((q.y+sh)*5.+T*.5))),mix(u_c2.g,u_c1.g,bb),mix(u_c2.b,u_c1.b,step(.5,fract((q.y-sh)*5.+T*.5))));
+    c*=.85+.15*h21(floor(uv*u_res*.5)+T); if(h21(vec2(floor(uv.y*60.),bt))>.97) c=vec3(1.)-c; return vec4(c,1.);`],
+  ['stars', 'Starfield', '#bfe3ff', '#000000', `vec3 c=vec3(0.);
+    for(int i=0;i<4;i++){ float fi=float(i); float z=fract(T*.12+fi*.25); float sc=mix(16.,1.5,z);
+      vec2 q=p*sc+fi*13.7; vec2 id=floor(q); vec2 f=fract(q)-.5; float n=h21(id+fi);
+      vec2 o2=(h22(id+fi*3.)-.5)*.6; float d=length(f-o2);
+      c+=smoothstep(.07*z+.012,0.,d)*step(.72,n)*smoothstep(0.,.3,z)*smoothstep(1.,.85,z)*mix(vec3(1.),u_c1,n*.7)*1.6; }
+    float a=clamp(max(c.r,max(c.g,c.b)),0.,1.); return vec4(c/max(a,.001),a);`],
+  ['tunnel', 'Tunnel', '#6a5cff', '#05010f', `float r=length(p)+.001; float a=atan(p.y,p.x);
+    vec2 q=vec2(.35/r+T*.6,a/3.14159+T*.05); float s=mod(floor(q.x*4.)+floor(q.y*8.),2.);
+    vec3 c=mix(u_c2,u_c1,s)*smoothstep(0.,.55,r)+u_c1*.35*exp(-r*4.); return vec4(c,1.);`],
+  ['kaleido', 'Kaleidoscope', '#ff9b4d', '#3d7bff', `float r=length(p); float a=atan(p.y,p.x); float n=6.;
+    a=mod(a,6.2832/n); a=abs(a-3.1416/n); vec2 q=vec2(cos(a),sin(a))*r; q=rot(T*.1)*q;
+    float v=fbm(q*3.+T*.2); vec3 c=hsv(v*1.4+T*.05,.7,1.)*.45+mix(u_c1,u_c2,v)*.65; c*=smoothstep(.05,.35,v+.1); return vec4(c,1.);`],
+  ['smoke', 'Smoke', '#c7d2ff', '#05060a', `vec2 q=p*2.; float f=fbm(q+fbm(q+vec2(T*.15,-T*.1))*1.5+vec2(0.,-T*.2));
+    return vec4(mix(u_c2,u_c1,smoothstep(.3,.85,f)),1.);`],
+  ['rainbow', 'Rainbow', '#ffffff', '#000000', `return vec4(hsv(uv.x*.8+uv.y*.2-T*.15,.8,1.),1.);`],
+  ['sunburst', 'Sunburst', '#ffc94d', '#ff5d73', `float a=atan(p.y,p.x)+T*.3; float r=length(p);
+    float rays=smoothstep(-.05,.05,sin(a*12.));
+    vec3 c=mix(u_c2,u_c1,rays)*(1.-.45*smoothstep(0.,.9,r))+u_c1*.4*exp(-r*5.); return vec4(c,1.);`],
+  ['ripple', 'Ripple', '#6aa8ff', '#02101f', `float r=length(p); float w=sin(r*28.-T*5.)*exp(-r*1.4);
+    return vec4(mix(u_c2,u_c1,clamp(.5+.5*w*(1.+u_au.y),0.,1.)),1.);`],
+  ['waves', 'Waves', '#3de0c0', '#0b2a4a', `float v=0.;
+    for(int i=0;i<4;i++){ float fi=float(i); v+=sin(uv.x*(4.+fi*2.)+T*(1.+fi*.4)+fi)*(.06-.01*fi); }
+    float st=fract((uv.y+v)*8.-T*.2); return vec4(mix(u_c1,u_c2,smoothstep(.42,.58,st)),1.);`],
+  ['checker', 'Checker warp', '#ffffff', '#111111', `vec2 q=p*6.; q+=vec2(sin(q.y*.5+T),cos(q.x*.5+T*.8))*.6;
+    return vec4(mix(u_c2,u_c1,mod(floor(q.x)+floor(q.y),2.)),1.);`],
+  ['hexpulse', 'Hex pulse', '#3de0c0', '#04131a', `vec2 q=p*8.; vec2 r2=vec2(1.,1.732); vec2 h=r2*.5;
+    vec2 a=mod(q,r2)-h; vec2 b=mod(q-h,r2)-h; vec2 g=dot(a,a)<dot(b,b)?a:b; vec2 id=q-g;
+    float d=max(dot(abs(g),vec2(.5,.866)),abs(g.x)); float pulse=.5+.5*sin(length(id)*.6-T*3.);
+    vec3 c=mix(u_c2,u_c1*(.35+.8*pulse)*(1.+u_au.y),smoothstep(.5,.45,d)); return vec4(c,1.);`],
+  ['voronoi', 'Stained glass', '#ff5d73', '#ffc94d', `vec2 q=p*5.; vec2 i=floor(q); vec2 f=fract(q); float md=8.; float md2=8.; vec2 mid=vec2(0.);
+    for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){ vec2 g=vec2(float(x),float(y)); vec2 o2=h22(i+g); o2=.5+.4*sin(T*.6+6.2831*o2);
+      vec2 r=g+o2-f; float d=dot(r,r); if(d<md){ md2=md; md=d; mid=i+g; } else if(d<md2) md2=d; }
+    float edge=smoothstep(0.,.06,sqrt(md2)-sqrt(md)); vec3 c=mix(u_c1,u_c2,h21(mid))*(.55+.45*h21(mid+3.));
+    return vec4(mix(vec3(.02),c,edge),1.);`],
+  ['spiral', 'Spiral', '#ffffff', '#000000', `float r=length(p); float a=atan(p.y,p.x);
+    float s=sin(a*3.+log(r+.001)*8.-T*3.); return vec4(mix(u_c2,u_c1,smoothstep(-.2,.2,s)),1.);`],
+  ['halftone', 'Halftone', '#ffc94d', '#1a0f02', `float sz=.045; vec2 q=p/sz; vec2 id=floor(q); vec2 f=fract(q)-.5; vec2 cp=(id+.5)*sz;
+    float w=.5+.5*sin(cp.x*4.+T*1.5)*cos(cp.y*3.-T); return vec4(mix(u_c2,u_c1,smoothstep(w*.5,w*.5-.08,length(f))),1.);`],
+  ['sparkles', 'Sparkles', '#ffe9a8', '#000000', `vec3 c=vec3(0.);
+    for(int i=0;i<3;i++){ float fi=float(i); vec2 q=p*(10.+fi*7.); vec2 id=floor(q); vec2 f=fract(q)-.5; float n=h21(id+fi*7.);
+      vec2 o2=(h22(id)-.5)*.6; float tw=pow(.5+.5*sin(T*3.*(.5+n)+n*40.),10.)*step(.55,n); vec2 a=abs(f-o2);
+      float s=smoothstep(.12,0.,length(f-o2))*.8+(smoothstep(.035,0.,a.x)*smoothstep(.35,0.,a.y)+smoothstep(.035,0.,a.y)*smoothstep(.35,0.,a.x))*.7;
+      c+=s*tw*mix(vec3(1.),u_c1,.6); }
+    float al=clamp(max(c.r,max(c.g,c.b)),0.,1.); return vec4(c/max(al,.001),al);`],
+  ['beat', 'Beat rings', '#ff3d9a', '#0b0016', `float r=length(p); float ring=0.;
+    for(int i=0;i<3;i++){ float kk=fract(T*.5+float(i)/3.); ring+=smoothstep(.035,0.,abs(r-kk*1.1))*(1.-kk); }
+    vec3 c=u_c2+u_c1*(ring*1.4+u_au.y*.9*exp(-r*2.)); return vec4(c,1.);`],
+  ['rain', 'Digital rain', '#3dff6a', '#000000', `float cols=40.; float x=floor(uv.x*cols); float sp=.35+h21(vec2(x,1.))*.9;
+    float pos=fract(T*sp*.35+h21(vec2(x,7.))); float d=uv.y-(1.-pos*1.3+.15);
+    float tr=d>0.?exp(-d*6.):0.; float cy=floor(uv.y*cols/asp);
+    float cell=step(.25,h21(vec2(x,cy+floor(T*6.+h21(vec2(x,2.))*10.)))); float cx=fract(uv.x*cols);
+    float gap=smoothstep(.12,.25,cx)*smoothstep(.88,.75,cx)*smoothstep(.1,.25,fract(uv.y*cols/asp));
+    vec3 c=u_c2+u_c1*tr*cell*gap+vec3(.85,1.,.9)*smoothstep(.025,0.,abs(d))*gap; return vec4(c,1.);`],
+  ['sweep', 'Scanner sweep', '#3de0c0', '#000000', `float x=fract(T*.25); float d=abs(uv.x-x);
+    vec3 c=mix(u_c1,vec3(1.),exp(-d*220.)); return vec4(c,clamp(exp(-d*80.)+.25*exp(-d*12.),0.,1.));`],
+];
+const FX_BY = Object.fromEntries(FX.map(f => [f[0], f]));
+const FX_HEAD = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform vec2 u_res; uniform float u_t; uniform vec3 u_c1, u_c2; uniform vec4 u_au;
+#define T u_t
+float h21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+vec2 h22(vec2 p){ float n=h21(p); return vec2(n,h21(p+n)); }
+float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.-2.*f);
+  return mix(mix(h21(i),h21(i+vec2(1.,0.)),u.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),u.x),u.y); }
+float fbm(vec2 p){ float v=0.; float a=.5; for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
+vec3 hsv(float h,float s,float v){ vec3 k=clamp(abs(mod(h*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.); return v*mix(vec3(1.),k,s); }
+mat2 rot(float a){ float c=cos(a); float s=sin(a); return mat2(c,-s,s,c); }
+vec4 fx(vec2 uv, vec2 p, float asp){
+`;
+const FX_TAIL = `
+}
+void main(){ vec2 uv=gl_FragCoord.xy/u_res; uv.y=1.-uv.y; float asp=u_res.x/u_res.y; vec2 p=(uv-.5)*vec2(asp,1.);
+  vec4 c=fx(uv,p,asp); c=clamp(c,0.,1.); o=vec4(c.rgb*c.a,c.a); }`;
+const FULL_VS = `#version 300 es
+void main(){ vec2 p=vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2)); gl_Position=vec4(p*2.-1.,0.,1.); }`;
+const fxProgs = {};
+function fxProg(k) {
+  if (fxProgs[k] !== undefined) return fxProgs[k];
+  try { fxProgs[k] = prog(FULL_VS, FX_HEAD + FX_BY[k][4] + FX_TAIL); }
+  catch (e) { console.warn('fx compile', k, e); fxProgs[k] = null; }
+  return fxProgs[k];
+}
+// copy a texture into the current target (used to stack layers)
+const copyP = prog(FULL_VS, `#version 300 es
+precision highp float; out vec4 o; uniform sampler2D u_tex; uniform vec2 u_res; uniform float u_a;
+void main(){ o=texture(u_tex, gl_FragCoord.xy/u_res)*u_a; }`);
+function target(holder, key, w, h) {
+  let tg = holder[key];
+  if (tg && tg.w === w && tg.h === h) return tg;
+  if (tg) { gl.deleteTexture(tg.tex); gl.deleteFramebuffer(tg.fbo); }
+  const tex = newTex(false); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return (holder[key] = { tex, fbo, w, h });
+}
+const rgb01 = h => hexRgb(h).map(v => v / 255);
+function renderFx(k, tg, o, t) {
+  const P = fxProg(k); if (!P) return false;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tg.fbo); gl.viewport(0, 0, tg.w, tg.h); gl.disable(gl.BLEND);
+  gl.useProgram(P.p); gl.bindVertexArray(emptyVao);
+  gl.uniform2f(P.u.u_res, tg.w, tg.h); gl.uniform1f(P.u.u_t, t * (o.speed ?? 1));
+  gl.uniform3fv(P.u.u_c1, rgb01(o.color)); gl.uniform3fv(P.u.u_c2, rgb01(o.color2));
+  if (P.u.u_au) gl.uniform4f(P.u.u_au, bands.level, bands.bass, bands.mid, bands.high);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
+}
+// ---- per-layer runtime ----
+const lrt = new Map();
+function LR(s, l) {
+  const key = s.id + ':' + l.id; let r = lrt.get(key);
+  if (!r) { const c = document.createElement('canvas'); c.width = c.height = 256; r = { canvas: c, ctx: c.getContext('2d'), tex: newTex(false) }; lrt.set(key, r); }
+  return r;
+}
+function dropLR(prefix) { for (const [k, r] of lrt) if (k.startsWith(prefix)) { gl.deleteTexture(r.tex); if (r.fxo) { gl.deleteTexture(r.fxo.tex); gl.deleteFramebuffer(r.fxo.fbo); } lrt.delete(k); } }
+const isFx = src => typeof src === 'string' && src.startsWith('fx:') && !!FX_BY[src.slice(3)];
+function compDims(s) { const a = clamp(aspectOf(s), .1, 10), L = 1024; return a >= 1 ? [L, Math.max(64, Math.round(L / a))] : [Math.max(64, Math.round(L * a)), L]; }
+const contentTex = s => { const r = R(s); return r.content || r.tex; };
+// base source + stacked layers -> one texture per surface
+function updateContent(s, t) {
+  const r = R(s);
+  if (isFx(s.src)) { const [w, h] = texDims(s); const tg = target(r, 'fxo', w, h); renderFx(s.src.slice(3), tg, s, t); r.base = tg.tex; }
+  else { updateTexture(s, t); const l = s.src === 'link' ? byId(s.link) : null; r.base = l && l !== s ? contentTex(l) : r.tex; }
+  const layers = (s.extra || []).filter(l => l.visible && l.opacity > 0);
+  if (!layers.length) { r.content = r.base; return; }
+  const outs = layers.map(l => {
+    const lr = LR(s, l);
+    if (isFx(l.src)) { const [w, h] = texDims(s); const tg = target(lr, 'fxo', w, h); renderFx(l.src.slice(3), tg, l, t); return tg.tex; }
+    if (l.src === 'link') { const o = byId(l.link); if (o && o !== s) return contentTex(o); }
+    const [tw, th] = texDims(s);
+    if (lr.canvas.width !== tw || lr.canvas.height !== th) { lr.canvas.width = tw; lr.canvas.height = th; }
+    drawGen({ ...s, ...l, name: s.name }, lr.ctx, tw, th, t);
+    gl.bindTexture(gl.TEXTURE_2D, lr.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, lr.canvas);
+    return lr.tex;
+  });
+  const [cw, ch] = compDims(s), tg = target(r, 'comp', cw, ch);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tg.fbo); gl.viewport(0, 0, cw, ch);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(copyP.p); gl.bindVertexArray(emptyVao); gl.enable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE0); gl.uniform1i(copyP.u.u_tex, 0); gl.uniform2f(copyP.u.u_res, cw, ch);
+  BLENDS.normal(); gl.bindTexture(gl.TEXTURE_2D, r.base); gl.uniform1f(copyP.u.u_a, 1); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  layers.forEach((l, i) => { (BLENDS[l.blend] || BLENDS.normal)(); gl.bindTexture(gl.TEXTURE_2D, outs[i]); gl.uniform1f(copyP.u.u_a, l.opacity); gl.drawArrays(gl.TRIANGLES, 0, 3); });
+  gl.disable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  r.content = tg.tex;
+}
+// thumbnails for the effects grid (rendered once, lazily)
+const fxThumbs = {};
+function fxThumb(k) {
+  if (fxThumbs[k]) return fxThumbs[k];
+  const w = 120, h = 68, hold = {}, tg = target(hold, 't', w, h), f = FX_BY[k];
+  const bandsSave = { ...bands }; Object.assign(bands, { level: .5, bass: .5, mid: .4, high: .3 });
+  const ok = renderFx(k, tg, { color: f[2], color2: f[3], speed: 1 }, 2.7);
+  Object.assign(bands, bandsSave);
+  let url = '';
+  if (ok) {
+    const px = new Uint8Array(w * h * 4); gl.bindFramebuffer(gl.FRAMEBUFFER, tg.fbo); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    for (let i = 3; i < px.length; i += 4) px[i] = 255; // premultiplied over black
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(px.buffer), w, h), 0, 0);
+    url = c.toDataURL('image/jpeg', .8);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteTexture(tg.tex); gl.deleteFramebuffer(tg.fbo);
+  return (fxThumbs[k] = url);
+}
+
 // =====================================================================
 // Masks
 // =====================================================================
@@ -889,7 +1150,8 @@ function updateAudio() {
 // Cues
 // =====================================================================
 const CUE_KEYS = ['src', 'link', 'color', 'color2', 'speed', 'opacity', 'visible', 'audio', 'band'];
-function snapshot() { const st = {}; surfaces.forEach(s => { st[s.id] = {}; CUE_KEYS.forEach(k => st[s.id][k] = s[k]); }); return st; }
+const clone = o => JSON.parse(JSON.stringify(o));
+function snapshot() { const st = {}; surfaces.forEach(s => { st[s.id] = {}; CUE_KEYS.forEach(k => st[s.id][k] = s[k]); st[s.id].extra = clone(s.extra || []); }); return st; }
 function goCue(i) {
   const cue = cues[i]; if (!cue) return;
   cueIdx = i;
@@ -898,7 +1160,7 @@ function goCue(i) {
     const to = cue.st[s.id]; if (!to) return;
     s.speed = to.speed; s.audio = to.audio; s.band = to.band;
     items.push({ s, from: { color: s.color, color2: s.color2, opacity: s.opacity }, to,
-      dip: to.src !== s.src || to.link !== s.link || to.visible !== s.visible, switched: false });
+      dip: to.src !== s.src || to.link !== s.link || to.visible !== s.visible || (to.extra && JSON.stringify(to.extra) !== JSON.stringify(s.extra || [])), switched: false });
   });
   trans = { t0: performance.now() / 1000, dur: Math.max(.01, +cue.fade || 0), items };
   renderCues();
@@ -911,12 +1173,12 @@ function updateTrans(t) {
     s.color = lerpHex(from.color, to.color, e); s.color2 = lerpHex(from.color2, to.color2, e);
     s.opacity = from.opacity + (to.opacity - from.opacity) * e;
     if (it.dip) {
-      if (k >= .5 && !it.switched) { s.src = to.src; s.link = to.link; s.visible = to.visible; it.switched = true; }
+      if (k >= .5 && !it.switched) { s.src = to.src; s.link = to.link; s.visible = to.visible; if (to.extra) s.extra = clone(to.extra); it.switched = true; }
       R(s).env = k < .5 ? 1 - 2 * k : 2 * k - 1;
     }
   });
   if (k >= 1) {
-    trans.items.forEach(({ s, to }) => { CUE_KEYS.forEach(key => s[key] = to[key]); R(s).env = 1; });
+    trans.items.forEach(({ s, to }) => { CUE_KEYS.forEach(key => s[key] = to[key]); if (to.extra) s.extra = clone(to.extra); R(s).env = 1; });
     trans = null; renderAll();
   }
 }
@@ -924,13 +1186,7 @@ function updateTrans(t) {
 // =====================================================================
 // Frame
 // =====================================================================
-const BLENDS = {
-  normal: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); },
-  add: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE); },
-  screen: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR); },
-  multiply: () => { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); },
-  lighten: () => { gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE); },
-};
+
 function buildVerts(s) {
   const f = mapper(s); let k = 0;
   for (let j = 0; j <= SUB; j++) for (let i = 0; i <= SUB; i++) {
@@ -967,7 +1223,7 @@ function drawSurfaces() {
     const bright = 1 + s.audio * (.08 + band * 1.7 - 1);
     buildVerts(s);
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, verts);
-    gl.bindTexture(gl.TEXTURE_2D, srcTex(s));
+    gl.bindTexture(gl.TEXTURE_2D, contentTex(s));
     gl.uniform4fv(surfP.u.u_crop, s.crop);
     gl.uniform2f(surfP.u.u_flip, s.flipH ? 1 : 0, s.flipV ? 1 : 0);
     gl.uniform1i(surfP.u.u_rot, s.rot);
@@ -978,7 +1234,7 @@ function drawSurfaces() {
     const useShape = !isRectShape(s) || (s.soft || 0) > 0;
     gl.uniform1i(surfP.u.u_useShape, useShape ? 1 : 0);
     gl.uniform1i(surfP.u.u_shape, 1);
-    if (useShape) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shapeTex(s)); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex(s)); }
+    if (useShape) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shapeTex(s)); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, contentTex(s)); }
     (BLENDS[s.blend] || BLENDS.normal)();
     gl.drawElements(gl.TRIANGLES, IDX_COUNT, gl.UNSIGNED_SHORT, 0);
   });
@@ -1015,7 +1271,8 @@ function composite(mode) {
 function frame(now) {
   const t = now / 1000;
   updateAudio(); updateTrans(t);
-  surfaces.forEach(s => updateTexture(s, t));
+  surfaces.forEach(s => updateContent(s, t));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   if (masksDirty) rebuildMasks();
   drawSurfaces();
   gl.bindTexture(gl.TEXTURE_2D, fboTex); gl.generateMipmap(gl.TEXTURE_2D);
@@ -1192,6 +1449,17 @@ function snapMove(pts, T) {
   return best;
 }
 function norm(e) { const r = rect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+// ---- leave Output mode on touch screens: press and hold anywhere ----
+let holdT = null;
+addEventListener('pointerdown', e => {
+  if (viewMode !== 'output') return;
+  const x0 = e.clientX, y0 = e.clientY;
+  clearTimeout(holdT);
+  holdT = setTimeout(() => { holdT = null; setMode('edit'); toast('Back to Edit'); }, 700);
+  const cancel = ev => { if (ev.type !== 'pointermove' || Math.hypot(ev.clientX - x0, ev.clientY - y0) > 12) { clearTimeout(holdT); holdT = null; off(); } };
+  const off = () => { removeEventListener('pointerup', cancel); removeEventListener('pointercancel', cancel); removeEventListener('pointermove', cancel); };
+  addEventListener('pointerup', cancel); addEventListener('pointercancel', cancel); addEventListener('pointermove', cancel);
+});
 // ---- touch / mouse gestures for the editor view ----
 const touches = new Map();   // pointerId -> [x, y]
 let pinch = null, pan = null;
@@ -1317,7 +1585,7 @@ $('stage').addEventListener('pointerdown', e => {
   for (let i = masks.length - 1; i >= 0; i--) if (masks[i].type === 'cut' && inPoly(x, y, masks[i].pts)) { select('mask', masks[i].id); return; }
   for (let i = surfaces.length - 1; i >= 0; i--) if (surfaces[i].visible && inPoly(x, y, outline(surfaces[i], 2))) { select('surface', surfaces[i].id); return; }
 });
-function select(kind, id) { sel = { kind, id }; if (kind === 'mask') selMaskPt = 0; renderAll(); }
+function select(kind, id) { if (sel.id !== id) selLayer = null; sel = { kind, id }; if (kind === 'mask') selMaskPt = 0; renderAll(); }
 
 // =====================================================================
 // Panel
@@ -1337,19 +1605,24 @@ function renderSurfList() {
 }
 function syncSurf() {
   const s = S();
-  ['sProps', 'dimSec', 'warpSec', 'blendSec'].forEach(id => $(id).style.display = s ? '' : 'none');
+  ['sProps', 'dimSec', 'warpSec', 'blendSec', 'layerSec', 'srcSec', 'fxSec', 'sliceSec'].forEach(id => $(id).style.display = s ? '' : 'none');
   if (!s) return;
-  $('pName').value = s.name; $('pSrc').value = s.src;
-  $('pColor').value = s.color; $('pColor2').value = s.color2;
-  $('pSpeed').value = s.speed; $('pOpacity').value = s.opacity; $('pBlend').value = s.blend;
+  if (selLayer && !(s.extra || []).some(l => l.id === selLayer)) selLayer = null;
+  const a = AL();
+  $('pName').value = s.name; $('pSrc').value = a.src;
+  $('pColor').value = a.color; $('pColor2').value = a.color2;
+  $('pSpeed').value = a.speed; $('pOpacity').value = s.opacity; $('pBlend').value = s.blend;
+  $('pSrc').querySelector('option[value=media]').disabled = a !== s;
+  $('srcFor').innerHTML = a === s ? `Editing the <b>base</b> of “${esc(s.name)}”` : `Editing <b>layer ${(s.extra.indexOf(a) + 2)}</b> of “${esc(s.name)}”`;
   $('pAudio').value = s.audio; $('pBand').value = s.band;
   $('vis').textContent = s.visible ? 'Hide' : 'Show';
-  $('mediaRow').style.display = s.src === 'media' ? '' : 'none';
+  $('mediaRow').style.display = a === s && s.src === 'media' ? '' : 'none';
   $('mediaName').textContent = R(s).mediaName || '';
-  $('linkRow').style.display = s.src === 'link' ? '' : 'none';
+  $('linkRow').style.display = a.src === 'link' ? '' : 'none';
   const L = $('pLink'); L.innerHTML = '';
   surfaces.filter(o => o.id !== s.id).forEach(o => { const op = document.createElement('option'); op.value = o.id; op.textContent = o.name; L.appendChild(op); });
-  if (s.link) L.value = s.link;
+  if (a.link) L.value = a.link;
+  renderLayers(); renderFxGrid(); renderSlice();
   $('meshSize').value = s.mesh.cols;
   $('wCorner').classList.toggle('on', warpMode === 'corner'); $('wMesh').classList.toggle('on', warpMode === 'mesh');
   ['fL', 'fR', 'fT', 'fB'].forEach((id, i) => $(id).value = s.feather[i]);
@@ -1358,19 +1631,23 @@ function syncSurf() {
   syncDims(); syncShapes(); syncAngle(); if (typeof syncEmpty === 'function') syncEmpty();
 }
 const onS = (id, ev, fn) => bind(id, ev, e => { const s = S(); if (s) { fn(s, e.target); drawOverlay(); } });
+// the layer the Source controls edit: the surface itself (base) or one of its extra layers
+let selLayer = null;
+const AL = () => { const s = S(); if (!s) return null; return (selLayer && (s.extra || []).find(l => l.id === selLayer)) || s; };
+const onL = (id, ev, fn) => bind(id, ev, e => { const a = AL(); if (a) { fn(a, e.target); renderLayers(); } });
 onS('pName', 'input', (s, t) => { s.name = t.value; renderSurfList(); });
-onS('pSrc', 'change', (s, t) => {
-  s.src = t.value;
-  if (s.src === 'link' && !byId(s.link)) { const o = surfaces.find(x => x.id !== s.id); s.link = o ? o.id : null; }
+onL('pSrc', 'change', (a, t) => {
+  const s = S(); a.src = t.value;
+  if (a.src === 'link' && !byId(a.link)) { const o = surfaces.find(x => x.id !== s.id); a.link = o ? o.id : null; }
   syncSurf();
-  if (s.src === 'media' && !R(s).media) $('pFile').click();
+  if (a === s && a.src === 'media' && !R(s).media) $('pFile').click();
 });
 bind('pPick', 'click', () => $('pFile').click());
 bind('pFile', 'change', e => { const s = S(), f = e.target.files[0]; if (s && f) setMedia(s, f); e.target.value = ''; });
-onS('pLink', 'change', (s, t) => { s.link = +t.value; });
-onS('pColor', 'input', (s, t) => { s.color = t.value; renderSurfList(); });
-onS('pColor2', 'input', (s, t) => { s.color2 = t.value; });
-onS('pSpeed', 'input', (s, t) => { s.speed = +t.value; });
+onL('pLink', 'change', (a, t) => { a.link = +t.value; });
+onL('pColor', 'input', (a, t) => { a.color = t.value; if (a === S()) renderSurfList(); });
+onL('pColor2', 'input', (a, t) => { a.color2 = t.value; });
+onL('pSpeed', 'input', (a, t) => { a.speed = +t.value; });
 onS('pOpacity', 'input', (s, t) => { s.opacity = +t.value; });
 onS('pBlend', 'change', (s, t) => { s.blend = t.value; });
 onS('pAudio', 'input', (s, t) => { s.audio = +t.value; });
@@ -1405,7 +1682,7 @@ onS('cornerReset', 'click', s => { s.c = [[.32, .25], [.62, .25], [.62, .68], [.
 bind('add', 'click', addSurface);
 bind('dup', 'click', () => {
   const s = S(); if (!s) return;
-  const n = JSON.parse(JSON.stringify(s)); n.id = nextId++; n.name = s.name + ' copy';
+  const n = JSON.parse(JSON.stringify(s)); n.id = nextId++; n.name = s.name + ' copy'; (n.extra || []).forEach(l => l.id = nextId++);
   n.c = n.c.map(([x, y]) => [x + .03, y + .03]); if (n.src === 'media') { n.src = 'link'; n.link = s.id; }
   surfaces.push(n); select('surface', n.id);
 });
@@ -1429,6 +1706,147 @@ bind('splitPair', 'click', () => {
   surfaces.splice(surfaces.indexOf(s) + 1, 0, Rr);
   toast('Split into A + B with a 10% blended overlap'); renderAll();
 });
+
+// ---- content layers ----
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function srcLabel(src) { if (isFx(src)) return FX_BY[src.slice(3)][1]; const o = $('pSrc').querySelector(`option[value="${src}"]`); return o ? o.textContent.replace('…', '') : src; }
+function renderLayers() {
+  const s = S(), L = $('lyList'); if (!s || !L) return;
+  L.innerHTML = '';
+  const row = (label, isSel, onPick) => { const d = document.createElement('div'); d.className = 'lyRow' + (isSel ? ' sel' : ''); d.innerHTML = label; d.onclick = e => { if (e.target.closest('button,select,input')) return; onPick(); }; return d; };
+  // top of the stack first
+  [...(s.extra || [])].map((l, i) => [l, i]).reverse().forEach(([l, i]) => {
+    const d = row(`<button class="eye" title="Show/hide">${l.visible ? '●' : '○'}</button><span class="nm">${i + 2}. ${esc(srcLabel(l.src))}</span>
+      <select title="Blend"><option value="normal">Normal</option><option value="add">Add</option><option value="screen">Screen</option><option value="multiply">Multiply</option><option value="lighten">Lighten</option></select>
+      <input type="range" min="0" max="1" step="0.01" title="Opacity"><button class="up" title="Move up">↑</button><button class="dn" title="Move down">↓</button><button class="x" title="Remove">✕</button>`,
+      selLayer === l.id, () => { selLayer = l.id; syncSurf(); });
+    const sl = d.querySelector('select'), op = d.querySelector('input'); sl.value = l.blend; op.value = l.opacity;
+    sl.onchange = () => { l.blend = sl.value; }; op.oninput = () => { l.opacity = +op.value; };
+    d.querySelector('.eye').onclick = () => { l.visible = !l.visible; renderLayers(); };
+    const mv = dir => { const a = s.extra, j = i + dir; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; renderLayers(); };
+    d.querySelector('.up').onclick = () => mv(1); d.querySelector('.dn').onclick = () => mv(-1);
+    d.querySelector('.x').onclick = () => { s.extra.splice(i, 1); if (selLayer === l.id) selLayer = null; dropLR(s.id + ':' + l.id); syncSurf(); };
+    L.appendChild(d);
+  });
+  L.appendChild(row(`<span style="color:var(--dim);font-size:11px;width:14px">▣</span><span class="nm">1. Base · ${esc(srcLabel(s.src))}</span><span class="meta">surface</span>`, !selLayer, () => { selLayer = null; syncSurf(); }));
+  $('lyAdd').disabled = (s.extra || []).length >= 3;
+}
+bind('lyAdd', 'click', () => {
+  const s = S(); if (!s) return; s.extra = s.extra || []; if (s.extra.length >= 3) return;
+  const f = FX_BY.sparkles, l = { id: nextId++, src: 'fx:sparkles', link: null, color: f[2], color2: f[3], speed: 1, opacity: 1, blend: 'add', visible: true };
+  s.extra.push(l); selLayer = l.id; syncSurf(); toast('Layer added: pick an effect or source for it');
+});
+// ---- effects grid ----
+(() => {
+  const og = $('pSrcFx'); FX.forEach(([k, label]) => { const o = document.createElement('option'); o.value = 'fx:' + k; o.textContent = label; og.appendChild(o); });
+  const g = $('fxGrid');
+  FX.forEach(([k, label, c1, c2]) => {
+    const b = document.createElement('button'); b.className = 'fxTile'; b.dataset.fx = k; b.title = label;
+    b.innerHTML = `<i></i><span>${label}</span>`;
+    b.onclick = () => { const a = AL(); if (!a) return; a.src = 'fx:' + k; a.color = c1; a.color2 = c2; syncSurf(); renderSurfList(); };
+    g.appendChild(b);
+  });
+})();
+let thumbsDone = false;
+function renderFxGrid() {
+  const a = AL();
+  document.querySelectorAll('.fxTile').forEach(b => b.classList.toggle('on', !!a && a.src === 'fx:' + b.dataset.fx));
+  if (thumbsDone || curTab !== 'content') return;
+  thumbsDone = true;
+  const tiles = [...document.querySelectorAll('.fxTile')]; let i = 0;
+  const step = () => { const t0 = performance.now(); while (i < tiles.length && performance.now() - t0 < 24) { const b = tiles[i++], u = fxThumb(b.dataset.fx); if (u) b.firstElementChild.style.backgroundImage = `url(${u})`; } if (i < tiles.length) setTimeout(step, 16); };
+  setTimeout(step, 30);
+}
+// ---- slicing ----
+function bboxPx(o) { const pts = outline(o, 2); const xs = pts.map(p => p[0] * out.w), ys = pts.map(p => p[1] * out.h); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }
+function renderSlice() {
+  const s = S(), L = $('slList'); if (!s || !L) return;
+  L.innerHTML = '';
+  const others = surfaces.filter(o => o.id !== s.id);
+  if (!others.length) { L.innerHTML = '<div class="tiny">Add more surfaces first.</div>'; return; }
+  others.forEach(o => {
+    const d = document.createElement('label'); d.className = 'item'; d.style.cursor = 'pointer';
+    d.innerHTML = `<input type="checkbox" value="${o.id}"${o.src === 'link' && o.link === s.id ? ' checked' : ''}><span class="sw" style="background:${o.color}"></span><span class="nm"></span>`;
+    d.querySelector('.nm').textContent = o.name; L.appendChild(d);
+  });
+}
+function sliceAcross(ids) {
+  const s = S(); if (!s) return;
+  const group = [s, ...ids.map(byId).filter(o => o && o !== s)];
+  if (group.length < 2) return toast('Tick at least one other surface');
+  const bb = group.map(bboxPx), U = [Math.min(...bb.map(b => b[0])), Math.min(...bb.map(b => b[1])), Math.max(...bb.map(b => b[2])), Math.max(...bb.map(b => b[3]))];
+  const W = U[2] - U[0] || 1, H = U[3] - U[1] || 1;
+  group.forEach((o, i) => {
+    const b = bb[i]; o.crop = [(b[0] - U[0]) / W, (b[1] - U[1]) / H, (b[2] - U[0]) / W, (b[3] - U[1]) / H];
+    o.rot = 0; o.flipH = false; o.flipV = false;
+    if (o !== s) { o.src = 'link'; o.link = s.id; }
+  });
+  syncSurf(); renderSurfList(); toast(`Spread across ${group.length} surfaces`);
+}
+bind('slApply', 'click', () => sliceAcross([...$('slList').querySelectorAll('input:checked')].map(i => +i.value)));
+bind('slAll', 'click', () => { const s = S(); if (s) sliceAcross(surfaces.filter(o => o.id !== s.id).map(o => o.id)); });
+bind('slReset', 'click', () => {
+  const s = S(); if (!s) return;
+  [s, ...surfaces.filter(o => o.src === 'link' && o.link === s.id)].forEach(o => { o.crop = [0, 0, 1, 1]; if (o !== s) { o.src = 'grid'; o.link = null; } });
+  syncSurf(); renderSurfList(); toast('Slicing undone');
+});
+
+// ---- help: tips + tour ----
+const TIPS = {
+  projects: 'Projects keep everything, including your videos and room photo. After the first <b>Save</b>, changes save automatically.',
+  layers: 'Add one surface for each thing you project on. Tap a surface on the canvas to select it. Masks keep light off windows, mirrors and TVs.',
+  content: 'Tap an <b>effect</b> for an instant look, or pick your own video. Stack layers, and use <b>Slice</b> to spread one video over several surfaces.',
+  shape: 'Give the surface a shape, then enter its real size to get the right canvas size for your content.',
+  warp: 'Drag the corners onto the real object. <b>Mesh</b> bends content around curves; the ↻ handle rotates.',
+  show: 'Record a cue for each look, then press <b>GO</b> or Space to crossfade through your show.',
+  room: 'Add a photo of your space, then tap <b>Preview</b> at the top to see how it will look in the dark.',
+  setup: 'Put this window on the projector and go fullscreen, or open an <b>Output window</b>. Grid & snap help line things up.',
+};
+let tipsOff = (() => { try { return JSON.parse(localStorage.getItem('projmapper.tipsOff') || '[]'); } catch (e) { return []; } })();
+function placeTips() {
+  document.querySelectorAll('.pane').forEach(p => {
+    const k = p.dataset.tab; let t = p.querySelector(':scope > .tip');
+    if (tipsOff.includes(k) || !TIPS[k]) { if (t) t.remove(); return; }
+    if (!t) { t = document.createElement('div'); t.className = 'tip'; t.innerHTML = `<span>${TIPS[k]}</span><button title="Hide tip" aria-label="Hide tip">✕</button>`;
+      t.querySelector('button').onclick = () => { tipsOff.push(k); try { localStorage.setItem('projmapper.tipsOff', JSON.stringify(tipsOff)); } catch (e) {} t.remove(); };
+      p.prepend(t); }
+  });
+}
+const TOUR = [
+  [null, 'Welcome to Projection Mapper', 'A quick tour of the main controls. You can replay it any time with the ? button.'],
+  ['#gl', 'Your projector image', 'This is exactly what the projector shows. Drag a surface’s round corner handles onto a real wall or object to pin it there.'],
+  ['#tabbar [data-tab=layers]', 'Layers', 'Add one surface for each thing you project on, plus masks to keep light off windows and mirrors.'],
+  ['#tabbar [data-tab=content]', 'Content', 'Pick what plays: one-tap effects, or your own video and images. Stack layers and slice one video across surfaces.'],
+  ['#tabbar [data-tab=warp]', 'Warp', 'Corner pin, mesh bending and rotation for tricky or curved surfaces.'],
+  ['#tabbar [data-tab=room]', 'Room', 'Add a photo of your space, then use Preview to see how the projection will look at night.'],
+  ['#modeSeg', 'Edit · Preview · Output', 'Output hides every control so only the projection shows. To come back, press H or press and hold anywhere on the screen.'],
+  ['#tabbar [data-tab=projects]', 'Projects', 'Name and save your work here. After the first save, changes save automatically.'],
+];
+let tourI = -1;
+function tourShow(i) {
+  tourI = i; const step = TOUR[i]; if (!step) return tourEnd();
+  $('tour').style.display = 'block';
+  $('tourT').textContent = step[1]; $('tourP').textContent = step[2]; $('tourN').textContent = `${i + 1} / ${TOUR.length}`;
+  $('tourBack').style.visibility = i ? 'visible' : 'hidden'; $('tourNext').textContent = i === TOUR.length - 1 ? 'Done' : 'Next';
+  const hole = $('tourHole'), card = $('tourCard'), cw = card.offsetWidth || 320;
+  const el = step[0] && document.querySelector(step[0]);
+  if (!el) { Object.assign(hole.style, { left: innerWidth / 2 + 'px', top: innerHeight / 2 + 'px', width: '0px', height: '0px' });
+    Object.assign(card.style, { left: (innerWidth - cw) / 2 + 'px', top: Math.max(20, innerHeight / 2 - 90) + 'px' }); return; }
+  const r = el.getBoundingClientRect(), pad = 6;
+  Object.assign(hole.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + pad * 2 + 'px', height: r.height + pad * 2 + 'px' });
+  const ch = card.offsetHeight || 150, below = r.bottom + 14 + ch < innerHeight - 8, big = r.height > innerHeight * .5;
+  const top = big ? Math.max(70, r.top + 20) : below ? r.bottom + 14 : Math.max(8, r.top - ch - 14);
+  Object.assign(card.style, { left: clamp(r.left + r.width / 2 - cw / 2, 12, innerWidth - cw - 12) + 'px', top: top + 'px' });
+}
+function tourStart() { openTab(null); setMode('edit'); tourShow(0); }
+function tourEnd() { $('tour').style.display = 'none'; tourI = -1; try { localStorage.setItem('projmapper.tourDone', '1'); } catch (e) {} }
+bind('tourNext', 'click', () => tourShow(tourI + 1));
+bind('tourBack', 'click', () => tourShow(Math.max(0, tourI - 1)));
+bind('tourSkip', 'click', tourEnd);
+bind('tourBtn', 'click', tourStart);
+bind('helpTop', 'click', tourStart);
+bind('tipsBtn', 'click', () => { tipsOff = []; try { localStorage.removeItem('projmapper.tipsOff'); } catch (e) {} placeTips(); toast('Tips are back on every tab'); });
+addEventListener('resize', () => { if (tourI >= 0) tourShow(tourI); });
 
 // ---- shapes ----
 function shapeIcon(k) {
@@ -1752,7 +2170,8 @@ function restore(txt) {
   if (d.unit && UNIT_CM[d.unit]) unit = d.unit;
   if (d.canvasMode) canvasMode = d.canvasMode;
   if (d.grid) { grid = { ...grid, ...d.grid }; syncGrid(); }
-  nextId = Math.max(0, ...surfaces.map(s => s.id), ...masks.map(m => m.id)) + 1;
+  lrt.forEach((r, k) => dropLR(k));
+  nextId = Math.max(0, ...surfaces.map(s => s.id), ...masks.map(m => m.id), ...surfaces.flatMap(s => (s.extra || []).map(l => l.id))) + 1;
   if (d.out?.preset) { $('oRes').value = d.out.preset; applyRes(d.out.preset); }
   masksDirty = true; sel = { kind: 'surface', id: surfaces[0]?.id ?? null }; syncPreview(); renderAll();
 }
@@ -1966,7 +2385,7 @@ addEventListener('keydown', e => {
   const k = e.key, s = S(), m = M();
   if (k === 'h' || k === 'H') return setMode(viewMode === 'output' ? 'edit' : 'output');
   if (k === 'p' || k === 'P') return setMode(viewMode === 'preview' ? 'edit' : 'preview');
-  if (k === 'Escape') return setMode('edit');
+  if (k === 'Escape') { if (tourI >= 0) return tourEnd(); return setMode('edit'); }
   if (k === 'f' || k === 'F') return toggleFS();
   if (k === 'o' || k === 'O') return openOutputWindow();
   if (k === 'b' || k === 'B') return $('blackout').click();
@@ -2017,12 +2436,12 @@ const ICON = {
 const TABS = [
   ['projects', 'Projects', ['projCur', 'projList']],
   ['layers', 'Layers', ['surfSec', 'maskSec']],
-  ['content', 'Content', ['sProps']],
+  ['content', 'Content', ['layerSec', 'srcSec', 'fxSec', 'sProps', 'sliceSec']],
   ['shape', 'Shape', ['shapeSec', 'dimSec']],
   ['warp', 'Warp', ['warpSec', 'blendSec']],
   ['show', 'Show', ['showTop', 'cueSec', 'audioSec']],
   ['room', 'Room', ['refSec', 'prevSec']],
-  ['setup', 'Setup', ['dispSec', 'gridSec', 'outSec', 'saveSec', 'keysSec']],
+  ['setup', 'Setup', ['dispSec', 'helpSec', 'gridSec', 'outSec', 'saveSec', 'keysSec']],
 ];
 const NEEDS_SURF = { content: 'Select a surface on the canvas or in <b>Layers</b> to change its content.', warp: 'Select a surface to warp, rotate or blend it.' };
 let curTab = null;
@@ -2050,6 +2469,7 @@ function openTab(k) {
   if (k) { $('sheetTitle').textContent = TABS.find(t => t[0] === k)[1]; $('panel').scrollTop = 0; }
   syncEmpty();
   if (k === 'shape' || k === 'warp') updateDimInfo();
+  if (k === 'content') renderFxGrid();
 }
 function syncEmpty() { const s = S(); document.querySelectorAll('.pane .empty').forEach(e => e.style.display = s ? 'none' : ''); }
 // the dims info refresh used to check its section was open; now check its tab
@@ -2071,8 +2491,10 @@ if (!restored) {
   sel = { kind: 'surface', id: a.id };
 }
 syncPreview(); syncGrid(); setMode('edit'); renderAll();
+placeTips();
 openTab(innerWidth > 720 ? 'layers' : null);
 fitCanvas();
+try { if (!localStorage.getItem('projmapper.tourDone')) setTimeout(tourStart, 900); } catch (e) {}
 $('pjAuto').checked = autosave;
 lastSaved = stateKey(); setStatus();
 // reopen the last project, or turn an old single save into the first project
